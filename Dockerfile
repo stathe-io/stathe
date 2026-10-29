@@ -27,7 +27,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 LABEL org.opencontainers.image.title="stathe" \
       org.opencontainers.image.description="Read-only Kubernetes security assessment" \
-      org.opencontainers.image.source="https://github.com/TestRebel/k8s-security-baseline" \
+      org.opencontainers.image.source="https://github.com/stathe-io/stathe" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 COPY --from=build /out/stathe /stathe

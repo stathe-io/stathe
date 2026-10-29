@@ -24,7 +24,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/TestRebel/stathe/internal/scan"
+	"github.com/stathe-io/stathe/internal/scan"
 )
 
 // File is one generated artefact, ready to be written to disk or reviewed in a

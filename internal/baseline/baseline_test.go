@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TestRebel/stathe/internal/scan"
+	"github.com/stathe-io/stathe/internal/scan"
 )
 
 func sc01(ns string) scan.Finding {

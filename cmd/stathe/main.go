@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TestRebel/stathe/internal/baseline"
-	"github.com/TestRebel/stathe/internal/report"
-	"github.com/TestRebel/stathe/internal/scan"
+	"github.com/stathe-io/stathe/internal/baseline"
+	"github.com/stathe-io/stathe/internal/report"
+	"github.com/stathe-io/stathe/internal/scan"
 )
 
 const usage = `stathe — Kubernetes security assessment

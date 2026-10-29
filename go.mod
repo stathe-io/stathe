@@ -1,4 +1,4 @@
-module github.com/TestRebel/stathe
+module github.com/stathe-io/stathe
 
 go 1.24.1
 

@@ -14,7 +14,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/TestRebel/stathe/internal/scan"
+	"github.com/stathe-io/stathe/internal/scan"
 )
 
 //go:embed template.html
