@@ -2,23 +2,19 @@
 
 Find out how exposed your Kubernetes cluster is, without changing anything.
 
-```sh
-docker run --rm -v ~/.kube:/root/.kube:ro ghcr.io/stathe-io/stathe check
-```
-
-No account, no signup, no key. It reads, it reports, it changes nothing.
+> **Nothing here runs yet.** This repository is being built in the open and
+> currently holds the plan, not the tool. The demo cluster comes first, then
+> `stathe check`. Watch the repo if you want to know when that changes.
 
 Most clusters run on defaults: every workload can reach every other workload,
 containers hold more rights than they need, and nobody can say exactly which
-software is running or where it came from. `stathe check` tells you which of
-those apply to you. The rest of this repository is what you do about it.
+software is running or where it came from. `stathe check` will tell you which
+of those apply to you, read-only and without an account. The rest of this
+repository is what you do about it.
 
-> **Status: early.** The demo cluster is being built first, then `check`.
-> Nothing here is stable yet. Issues and pull requests are welcome.
+## Planned commands
 
-## Commands
-
-| Command | What it does |
+| Command | What it will do |
 |---|---|
 | `stathe check` | Read-only assessment of a cluster and its pipelines |
 | `stathe report` | Turns the findings into a readable report |
@@ -34,19 +30,13 @@ those apply to you. The rest of this repository is what you do about it.
 | `insight/` | The checks behind `stathe check` |
 | `report/` | Report generation |
 
-## Try it against the demo cluster
+## The demo cluster
 
-If you would rather not point an unfamiliar tool at your own cluster, start with
-one built to be broken:
-
-```sh
-git clone https://github.com/TestRebel/k8s-security-baseline
-cd k8s-security-baseline
-make up
-```
-
-This brings up a local k3d cluster running Northwind. It should take under ten
-minutes on a clean laptop, and `make down` removes all of it.
+Rather than asking anyone to point an unfamiliar tool at their own cluster, the
+first thing being built here is one that exists to be broken: a local k3d
+cluster running Northwind, a small logistics app carrying ten deliberate
+weaknesses. `make up` will bring it up in under ten minutes on a clean laptop
+and `make down` will remove all of it.
 
 See [`cluster/attack.md`](cluster/attack.md) for the walkthrough: how to
 demonstrate each weakness yourself, before you apply the baseline and watch the
