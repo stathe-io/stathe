@@ -74,6 +74,7 @@ func runCheck(args []string) int {
 	kubeContext := fs.String("context", "", "kubectl context to assess")
 	asJSON := fs.Bool("json", false, "emit findings as JSON")
 	framework := fs.String("framework", "", "annotate findings with obligations (nis2, dora, iso27001)")
+	summary := fs.Bool("summary", false, "one line per check instead of one per finding")
 	failOn := fs.String("fail-on", "none", "exit 1 when a finding at this severity or above remains (high, medium, low, none)")
 	exceptionsDir := fs.String("exceptions", "", "directory holding .stathe.yaml (default: the manifests dir, or the working directory)")
 	fs.Parse(args)
@@ -155,14 +156,21 @@ func runCheck(args []string) int {
 		return 0
 	}
 
-	for _, f := range findings {
-		fmt.Println(f)
-		// With a framework selected, the obligation goes on its own indented
-		// line. Putting it in the table would push the detail text off a
-		// terminal, and the detail is the part an engineer acts on.
-		if *framework != "" {
-			for _, c := range scan.ControlsFor(f.ID, scan.Framework(*framework)) {
-				fmt.Printf("%-16s%s  %s\n", "", c.Ref, c.Name)
+	if *summary {
+		// One line per check, for a platform with enough findings that the
+		// full list scrolls past. The detail is still in --json and in the
+		// report; this is the view you read out loud in a kickoff.
+		printSummary(findings)
+	} else {
+		for _, f := range findings {
+			fmt.Println(f)
+			// With a framework selected, the obligation goes on its own indented
+			// line. Putting it in the table would push the detail text off a
+			// terminal, and the detail is the part an engineer acts on.
+			if *framework != "" {
+				for _, c := range scan.ControlsFor(f.ID, scan.Framework(*framework)) {
+					fmt.Printf("%-16s%s  %s\n", "", c.Ref, c.Name)
+				}
 			}
 		}
 	}
@@ -201,6 +209,39 @@ func runCheck(args []string) int {
 		}
 	}
 	return 0
+}
+
+// printSummary collapses the findings to one line per check, keeping the
+// catalogue order rather than re-sorting, so two runs are comparable at a
+// glance. The count is what a reader needs first: how many of this, not which
+// ones, which is the next question and a different view.
+func printSummary(findings []scan.Finding) {
+	type row struct {
+		id    string
+		risk  scan.Risk
+		count int
+	}
+	var order []string
+	seen := map[string]*row{}
+
+	for _, f := range findings {
+		r, ok := seen[f.ID]
+		if !ok {
+			r = &row{id: f.ID, risk: f.Risk}
+			seen[f.ID] = r
+			order = append(order, f.ID)
+		}
+		if rankOf(f.Risk) < rankOf(r.risk) {
+			r.risk = f.Risk
+		}
+		r.count++
+	}
+
+	for _, id := range order {
+		r := seen[id]
+		c := scan.Catalogue[id]
+		fmt.Printf("%-7s %-8s %2d  %s\n", r.id, r.risk, r.count, c.Title)
+	}
 }
 
 // failThreshold maps --fail-on onto the risk ranking. -1 means never fail,

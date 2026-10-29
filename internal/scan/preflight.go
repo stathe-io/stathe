@@ -2,14 +2,15 @@ package scan
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
-	authv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -75,18 +76,21 @@ func Preflight(ctxName string) (*PreflightResult, error) {
 		}
 	}
 
-	clients, err := kubernetes.NewForConfig(cfg)
+	client, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("could not create client: %w", err)
 	}
 
 	// Reachability first. Everything below is meaningless if this fails, and
 	// the error it returns is the one worth showing a client.
-	ver, err := clients.Discovery().ServerVersion()
+	//
+	// This reads /version directly rather than through the typed clientset.
+	// Pulling in kubernetes.Interface for two calls doubled the image, and the
+	// small distroless image is itself an argument we make to clients.
+	res.Version, err = serverVersion(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("could not reach the API server at %s: %w", cfg.Host, err)
 	}
-	res.Version = ver.GitVersion
 
 	ctx := context.Background()
 	res.OK = true
@@ -94,30 +98,34 @@ func Preflight(ctxName string) (*PreflightResult, error) {
 	// SelfSubjectAccessReview asks the API server what this identity may do.
 	// It is the honest way to check: it accounts for every Role, binding and
 	// webhook in play, rather than reading RBAC objects and guessing.
+	reviews := client.Resource(gvrOf("authorization.k8s.io", "v1", "selfsubjectaccessreviews"))
+
 	for _, w := range wanted {
 		a := Access{Resource: w.gvr.Resource, Group: w.gvr.Group}
 
-		review := &authv1.SelfSubjectAccessReview{
-			Spec: authv1.SelfSubjectAccessReviewSpec{
-				ResourceAttributes: &authv1.ResourceAttributes{
-					Group:    w.gvr.Group,
-					Version:  w.gvr.Version,
-					Resource: w.gvr.Resource,
-					Verb:     "list",
+		review := &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "authorization.k8s.io/v1",
+			"kind":       "SelfSubjectAccessReview",
+			"spec": map[string]interface{}{
+				"resourceAttributes": map[string]interface{}{
+					"group":    w.gvr.Group,
+					"version":  w.gvr.Version,
+					"resource": w.gvr.Resource,
+					"verb":     "list",
 				},
 			},
-		}
+		}}
 
-		out, err := clients.AuthorizationV1().
-			SelfSubjectAccessReviews().
-			Create(ctx, review, metav1.CreateOptions{})
+		out, err := reviews.Create(ctx, review, metav1.CreateOptions{})
 		if err != nil {
 			// Some managed clusters restrict the review API itself. Fall back
 			// to trying the list, which answers the same question less politely.
 			a.Allowed, a.Reason = tryList(ctx, cfg, w.gvr.Group, w.gvr.Version, w.gvr.Resource)
 		} else {
-			a.Allowed = out.Status.Allowed
-			a.Reason = out.Status.Reason
+			allowed, _, _ := unstructured.NestedBool(out.Object, "status", "allowed")
+			reason, _, _ := unstructured.NestedString(out.Object, "status", "reason")
+			a.Allowed = allowed
+			a.Reason = reason
 			if !a.Allowed && a.Reason == "" {
 				a.Reason = "not permitted for this account"
 			}
@@ -131,6 +139,43 @@ func Preflight(ctxName string) (*PreflightResult, error) {
 
 	res.Platform = detectPlatform(ctx, cfg)
 	return res, nil
+}
+
+// serverVersion reads /version, which every API server exposes to any
+// authenticated identity.
+//
+// This goes over a plain HTTP client built from the kubeconfig rather than
+// through a typed client. Pulling in the full clientset for this one call and
+// the access reviews doubled the image, and the small distroless image is
+// itself an argument we make to clients.
+func serverVersion(cfg *rest.Config) (string, error) {
+	httpClient, err := rest.HTTPClientFor(cfg)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, strings.TrimSuffix(cfg.Host, "/")+"/version", nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("the API server answered %s", resp.Status)
+	}
+
+	var v struct {
+		GitVersion string `json:"gitVersion"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		return "", fmt.Errorf("could not read the version response: %w", err)
+	}
+	return v.GitVersion, nil
 }
 
 // tryList is the fallback when SelfSubjectAccessReview is unavailable. It asks

@@ -1,5 +1,5 @@
 CLUSTER := northwind
-VERSION ?= v0.1.0
+VERSION ?= v0.3.0
 MANIFESTS := cluster/northwind
 
 .DEFAULT_GOAL := help
