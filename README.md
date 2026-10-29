@@ -4,7 +4,7 @@ Find out how exposed your Kubernetes cluster is, without changing anything.
 
 ```sh
 docker run --rm -v ~/.kube:/root/.kube:ro ghcr.io/stathe-io/stathe check
-```sh
+```
 
 No account, no signup, no key. It reads, it reports, it changes nothing.
 
@@ -43,7 +43,7 @@ one built to be broken:
 git clone https://github.com/TestRebel/k8s-security-baseline
 cd k8s-security-baseline
 make up
-```sh
+```
 
 This brings up a local k3d cluster running Northwind. It should take under ten
 minutes on a clean laptop, and `make down` removes all of it.
