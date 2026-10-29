@@ -1,0 +1,22 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: northwind
+
+servers: 1
+agents: 1
+
+image: rancher/k3s:v1.31.4-k3s1
+
+ports:
+  - port: 8080:80
+    nodeFilters:
+      - loadbalancer
+
+# Traefik ships with k3s and is left in place on purpose: the baseline has to
+# punch an ingress-controller exception through a default-deny NetworkPolicy,
+# and that is only a real exercise if there is a real ingress controller.
+options:
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true

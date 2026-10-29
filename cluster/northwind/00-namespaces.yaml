@@ -1,0 +1,28 @@
+# Northwind Logistics — a deliberately insecure demo platform.
+#
+# DO NOT APPLY THIS TO A CLUSTER YOU CARE ABOUT.
+#
+# Every weakness here is intentional and carries an nw-finding label matching
+# the finding IDs used in the sample report. No namespace gets Pod Security
+# Admission labels, which is itself part of the exercise.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: northwind-web
+  labels:
+    app.kubernetes.io/part-of: northwind
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: northwind-orders
+  labels:
+    app.kubernetes.io/part-of: northwind
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: northwind-tracking
+  labels:
+    app.kubernetes.io/part-of: northwind

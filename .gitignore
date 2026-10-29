@@ -1,0 +1,6 @@
+# Go
+/stathe
+/dist/
+
+# Local
+.DS_Store
