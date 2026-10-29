@@ -32,7 +32,7 @@ down: ## Delete the cluster and everything in it
 
 .PHONY: validate
 validate: ## Parse the manifests offline (no cluster needed)
-	@python3 scripts/validate.py $(MANIFESTS)
+	@go run ./cmd/stathe check --manifests $(MANIFESTS)
 
 .PHONY: validate-schema
 validate-schema: ## Validate against a live API server (needs a cluster)
