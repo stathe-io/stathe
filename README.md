@@ -1,8 +1,18 @@
-# stathe
+<p align="center">
+  <img src="docs/banner.png" alt="stathe" width="760">
+</p>
 
-**See how far an attacker gets.** A read-only Kubernetes assessment: six checks
-on the configuration that decides blast radius, a report you can hand to an
-auditor, and the policies that close the findings.
+<p align="center">
+  A read-only Kubernetes assessment. One command, nothing installed in the
+  cluster, nothing changed.
+</p>
+
+<p align="center">
+  <a href="#getting-started">Get started</a> &middot;
+  <a href="#checks">Checks</a> &middot;
+  <a href="cluster/readonly-rbac.yaml">Permissions</a> &middot;
+  <a href="#in-a-pipeline">Pipelines</a>
+</p>
 
 > **Private beta.** `preflight`, `check`, `report`, `baseline` and `compliance`
 > work today. There is no published image or release yet, so build from source.
