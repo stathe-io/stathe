@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/TestRebel/stathe/internal/baseline"
 	"github.com/TestRebel/stathe/internal/report"
 	"github.com/TestRebel/stathe/internal/scan"
 )
@@ -22,6 +24,7 @@ Usage:
   stathe check                    Assess the current kubectl context
   stathe report --client NAME     Turn findings into a client-ready document
   stathe preflight --context NAME Check access the day before an assessment
+  stathe baseline --out DIR       Generate the fix as files, applying nothing
   stathe compliance               Which NIS2 measures these checks can evidence
   stathe version
 
@@ -48,6 +51,8 @@ func main() {
 		os.Exit(runCompliance(os.Args[2:]))
 	case "preflight":
 		os.Exit(runPreflight(os.Args[2:]))
+	case "baseline":
+		os.Exit(runBaseline(os.Args[2:]))
 	case "version":
 		fmt.Println("stathe", version)
 	case "-h", "--help", "help":
@@ -220,6 +225,69 @@ func runReport(args []string) int {
 	if *out != "" {
 		fmt.Fprintf(os.Stderr, "wrote %s (%d findings)\n", *out, len(findings))
 	}
+	return 0
+}
+
+// runBaseline writes the fix to disk and stops there. It never applies
+// anything, which is the whole point: the client's own pipeline applies it,
+// after their own review.
+func runBaseline(args []string) int {
+	fs := flag.NewFlagSet("baseline", flag.ExitOnError)
+	manifests := fs.String("manifests", "", "directory of manifests to assess")
+	kubeContext := fs.String("context", "", "kubectl context to assess")
+	outDir := fs.String("out", "baseline", "directory to write the baseline into")
+	ingress := fs.String("ingress-namespace", "", "namespace the ingress controller runs in")
+	fs.Parse(args)
+
+	if *manifests != "" && *kubeContext != "" {
+		fmt.Fprintln(os.Stderr, "use either --manifests or --context, not both")
+		return 2
+	}
+
+	var (
+		resources []scan.Resource
+		err       error
+		opt       baseline.Options
+	)
+
+	if *manifests != "" {
+		resources, err = scan.LoadDir(*manifests)
+	} else {
+		resources, err = scan.LoadCluster(*kubeContext)
+		// Against a live cluster the ingress controller can be identified
+		// rather than guessed, which decides which exception to write.
+		if pre, perr := scan.Preflight(*kubeContext); perr == nil {
+			opt.Ingress = pre.Platform.Ingress
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not assess: %v\n", err)
+		return 1
+	}
+
+	opt.IngressNamespace = *ingress
+
+	files := baseline.Generate(scan.Run(resources), opt)
+	if len(files) == 0 {
+		fmt.Println("Nothing to generate: every namespace already has a NetworkPolicy.")
+		return 0
+	}
+
+	for _, f := range files {
+		path := filepath.Join(*outDir, f.Name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "could not create %s: %v\n", filepath.Dir(path), err)
+			return 1
+		}
+		if err := os.WriteFile(path, []byte(f.Content), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "could not write %s: %v\n", path, err)
+			return 1
+		}
+		fmt.Println("wrote", path)
+	}
+
+	fmt.Printf("\n%d files in %s/. Nothing was applied.\n", len(files), *outDir)
+	fmt.Printf("Read %s/README.md before applying anything in enforcing/.\n", *outDir)
 	return 0
 }
 

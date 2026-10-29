@@ -19,7 +19,7 @@ repository is what you do about it.
 | `stathe check` | works | Read-only assessment of a cluster or of manifests on disk |
 | `stathe report` | works | Turns the findings into a client-ready document |
 | `stathe compliance` | works | Which NIS2 measures these checks can and cannot evidence |
-| `stathe baseline` | not built | Generates the baseline as a merge request for your own repo |
+| `stathe baseline` | works | Generates the fix as files, split into safe and enforcing halves |
 | `stathe preflight` | works | Verifies access and identifies the platform before the day |
 
 ```sh
