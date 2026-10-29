@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
+	"github.com/TestRebel/stathe/internal/report"
 	"github.com/TestRebel/stathe/internal/scan"
 )
 
@@ -34,8 +36,10 @@ func main() {
 	switch os.Args[1] {
 	case "check":
 		os.Exit(runCheck(os.Args[2:]))
+	case "report":
+		os.Exit(runReport(os.Args[2:]))
 	case "version":
-		fmt.Println("stathe (development build)")
+		fmt.Println("stathe", version)
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:
@@ -114,5 +118,78 @@ func runCheck(args []string) int {
 		len(findings), counts[scan.High], counts[scan.Medium], counts[scan.Low])
 	fmt.Println("\nNothing was changed. This command only reads.")
 
+	return 0
+}
+
+// version is set at build time with -ldflags. The report prints it, because a
+// client needs to know which version produced a given set of findings before
+// they can compare two assessments.
+var version = "dev"
+
+func runReport(args []string) int {
+	fs := flag.NewFlagSet("report", flag.ExitOnError)
+	in := fs.String("findings", "", "findings JSON from `stathe check --json` (default: stdin)")
+	out := fs.String("out", "", "write the report here (default: stdout)")
+	client := fs.String("client", "", "client name for the cover")
+	env := fs.String("environment", "", "environment or cluster name")
+	author := fs.String("author", "Jarno Kristelijn", "report author")
+	email := fs.String("email", "info@testrebel.com", "contact address")
+	fs.Parse(args)
+
+	var raw []byte
+	var err error
+	if *in == "" || *in == "-" {
+		raw, err = io.ReadAll(os.Stdin)
+	} else {
+		raw, err = os.ReadFile(*in)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not read findings: %v\n", err)
+		return 1
+	}
+
+	var findings []scan.Finding
+	if err := json.Unmarshal(raw, &findings); err != nil {
+		fmt.Fprintf(os.Stderr, "could not parse findings JSON: %v\n", err)
+		fmt.Fprintln(os.Stderr, "expected the output of: stathe check --json")
+		return 1
+	}
+	if len(findings) == 0 {
+		fmt.Fprintln(os.Stderr, "no findings to report")
+		return 1
+	}
+
+	if *client == "" {
+		fmt.Fprintln(os.Stderr, "stathe report needs --client")
+		return 2
+	}
+
+	meta := report.Meta{
+		Client:      *client,
+		Environment: *env,
+		Author:      *author,
+		Email:       *email,
+		KitVersion:  version,
+	}
+
+	w := os.Stdout
+	if *out != "" {
+		f, err := os.Create(*out)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could not create %s: %v\n", *out, err)
+			return 1
+		}
+		defer f.Close()
+		w = f
+	}
+
+	if err := report.Write(w, findings, meta); err != nil {
+		fmt.Fprintf(os.Stderr, "could not write the report: %v\n", err)
+		return 1
+	}
+
+	if *out != "" {
+		fmt.Fprintf(os.Stderr, "wrote %s (%d findings)\n", *out, len(findings))
+	}
 	return 0
 }

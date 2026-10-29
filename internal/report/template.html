@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Security assessment — {{.Meta.Client}}</title>
+<style>
+  @page { size: A4; margin: 16mm 16mm 18mm; }
+  @page :first { margin: 0; }
+  :root {
+    --navy: #0f1e33;
+    --navy-2: #1a3050;
+    --accent: #14b8a6;
+    --accent-soft: #e6f7f5;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --high: #dc2626;
+    --high-soft: #fde8e8;
+    --med: #d97706;
+    --med-soft: #fef3e2;
+    --low: #2563eb;
+    --low-soft: #e6effd;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--text);
+    font-size: 9.5pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .cover {
+    width: 210mm; height: 297mm;
+    background: linear-gradient(150deg, var(--navy) 0%, var(--navy-2) 100%);
+    color: #fff;
+    padding: 30mm 20mm 20mm;
+    display: flex; flex-direction: column;
+    position: relative; overflow: hidden;
+    page-break-after: always;
+  }
+  .cover::after {
+    content: "";
+    position: absolute; right: -45mm; top: 60mm;
+    width: 150mm; height: 150mm;
+    border: 22mm solid rgba(20, 184, 166, 0.15);
+    border-radius: 50%;
+  }
+  .eyebrow {
+    display: inline-block;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 8pt; font-weight: 700;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 1.5mm 3mm; border-radius: 1.5mm;
+    align-self: flex-start;
+  }
+  .cover h1 { font-size: 32pt; line-height: 1.1; margin: 12mm 0 5mm; font-weight: 800; }
+  .cover h1 span { color: var(--accent); }
+  .cover .sub { font-size: 13pt; color: #c7d2e0; }
+  .meta { margin-top: auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6mm 10mm; position: relative; z-index: 1; }
+  .meta div small { display: block; font-size: 7.5pt; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  .meta div { font-size: 11pt; }
+  .disclaimer { margin-top: 10mm; font-size: 8pt; color: #93a3b8; position: relative; z-index: 1; }
+
+  h2 {
+    font-size: 16pt; color: var(--navy); font-weight: 800;
+    margin: 0 0 4mm; padding-bottom: 2mm;
+    border-bottom: 2pt solid var(--accent);
+  }
+  h3 { font-size: 11pt; color: var(--navy); margin: 5mm 0 2mm; }
+  p { margin-bottom: 2.5mm; }
+  section { margin-bottom: 8mm; }
+  .break { page-break-before: always; }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin: 4mm 0 5mm; }
+  .kpi { border-radius: 3mm; padding: 4mm; text-align: center; }
+  .kpi b { display: block; font-size: 22pt; line-height: 1.1; font-weight: 800; }
+  .kpi span { font-size: 8.5pt; font-weight: 600; }
+  .kpi.high { background: var(--high-soft); color: var(--high); }
+  .kpi.med { background: var(--med-soft); color: var(--med); }
+  .kpi.low { background: var(--low-soft); color: var(--low); }
+  .kpi.total { background: var(--accent-soft); color: #0f766e; }
+
+  .callout {
+    background: #f8fafc; border-left: 3pt solid var(--accent);
+    padding: 3.5mm 5mm; margin: 4mm 0; border-radius: 0 2mm 2mm 0;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin: 3mm 0 4mm; font-size: 9pt; }
+  th {
+    text-align: left; font-size: 7.5pt; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); border-bottom: 1.5pt solid var(--navy); padding: 2mm;
+  }
+  td { border-bottom: 1px solid var(--line); padding: 2.2mm 2mm; vertical-align: top; }
+  tr { page-break-inside: avoid; }
+  .id { font-family: "JetBrains Mono", Consolas, monospace; font-size: 8.5pt; color: var(--muted); white-space: nowrap; }
+
+  .badge { display: inline-block; font-size: 7.5pt; font-weight: 700; padding: 0.6mm 2.2mm; border-radius: 10mm; white-space: nowrap; }
+  .badge.high { background: var(--high-soft); color: var(--high); }
+  .badge.medium { background: var(--med-soft); color: var(--med); }
+  .badge.low { background: var(--low-soft); color: var(--low); }
+
+  .finding {
+    border: 1px solid var(--line); border-radius: 3mm;
+    padding: 4.5mm 5mm; margin-bottom: 5mm;
+    page-break-inside: avoid;
+  }
+  .finding header { display: flex; justify-content: space-between; align-items: baseline; gap: 4mm; margin-bottom: 2.5mm; }
+  .finding header h3 { margin: 0; }
+  .finding dl { display: grid; grid-template-columns: 26mm 1fr; gap: 1.5mm 4mm; }
+  .finding dt { font-size: 7.5pt; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding-top: 0.5mm; }
+  .affected { font-family: "JetBrains Mono", Consolas, monospace; font-size: 8pt; color: var(--text); }
+  .affected li { margin-bottom: 0.8mm; list-style: none; padding-left: 4mm; position: relative; }
+  .affected li::before {
+    content: ""; position: absolute; left: 0; top: 1.6mm;
+    width: 1.5mm; height: 1.5mm; background: var(--accent); border-radius: 50%;
+  }
+
+  .signoff { margin-top: 8mm; display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 4mm; font-size: 9pt; color: var(--muted); }
+  .signoff b { color: var(--navy); }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <span class="eyebrow">Security assessment</span>
+  <h1>Kubernetes<br><span>Baseline</span></h1>
+  <p class="sub">Findings and recommended next steps</p>
+  <div class="meta">
+    <div><small>Client</small>{{.Meta.Client}}</div>
+    <div><small>Date</small>{{.Meta.Date}}</div>
+    <div><small>Environment</small>{{.Meta.Environment}}</div>
+    <div><small>Prepared by</small>{{.Meta.Author}}</div>
+  </div>
+  <p class="disclaimer">
+    Produced with stathe {{.Meta.KitVersion}}. The assessment is read-only:
+    no configuration was changed and no workload was restarted while gathering
+    these findings.
+  </p>
+</div>
+
+<section>
+  <h2>1. Summary</h2>
+  <p>
+    This assessment covers the configuration of {{.Meta.Environment}}. It reports
+    what the platform allows today, rated for this environment rather than on
+    generic scores. Nothing was changed to produce it.
+  </p>
+
+  <div class="kpis">
+    <div class="kpi high"><b>{{.High}}</b><span>High risk</span></div>
+    <div class="kpi med"><b>{{.Medium}}</b><span>Medium risk</span></div>
+    <div class="kpi low"><b>{{.Low}}</b><span>Low risk</span></div>
+    <div class="kpi total"><b>{{.Total}}</b><span>Total findings</span></div>
+  </div>
+
+  {{if .Groups}}
+  <div class="callout">
+    <b>The headline.</b>
+    {{with index .Groups 0}}{{.Why}}{{end}}
+  </div>
+  {{end}}
+</section>
+
+<section>
+  <h2>2. Findings overview</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Finding</th><th>Affected</th><th>Risk</th></tr>
+    </thead>
+    <tbody>
+      {{range .Groups}}
+      <tr>
+        <td class="id">{{.ID}}</td>
+        <td>{{.Title}}</td>
+        <td>{{len .Resources}}</td>
+        <td><span class="badge {{.Risk}}">{{.Risk}}</span></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+
+<section class="break">
+  <h2>3. Findings in detail</h2>
+  {{range .Groups}}
+  <div class="finding">
+    <header>
+      <h3>{{.ID}} &middot; {{.Title}}</h3>
+      <span class="badge {{.Risk}}">{{.Risk}}</span>
+    </header>
+    <dl>
+      <dt>Why it matters</dt><dd>{{.Why}}</dd>
+      <dt>Next step</dt><dd>{{.Next}}</dd>
+      <dt>Affected</dt>
+      <dd>
+        <ul class="affected">
+          {{range .Resources}}<li>{{.}}</li>{{end}}
+        </ul>
+      </dd>
+    </dl>
+  </div>
+  {{end}}
+
+  <div class="signoff">
+    <div><b>{{.Meta.Author}}</b><br>DevSecOps Engineer</div>
+    <div style="text-align:right">{{.Meta.Email}}</div>
+  </div>
+</section>
+
+</body>
+</html>

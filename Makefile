@@ -1,4 +1,5 @@
 CLUSTER := northwind
+VERSION ?= v0.1.0
 MANIFESTS := cluster/northwind
 
 .DEFAULT_GOAL := help
@@ -61,3 +62,14 @@ test: ## Run the test suite
 .PHONY: install
 install: ## Install the stathe binary into $$GOPATH/bin
 	go install ./cmd/stathe
+
+.PHONY: image
+image: ## Build the container image
+	docker build --build-arg VERSION=$(VERSION) -t stathe:$(VERSION) .
+
+.PHONY: image-save
+image-save: image ## Build and save the image as a portable tar file
+	docker save stathe:$(VERSION) | gzip > stathe-$(VERSION).tar.gz
+	@echo
+	@echo "Wrote stathe-$(VERSION).tar.gz ($$(du -h stathe-$(VERSION).tar.gz | cut -f1))"
+	@echo "On the other machine:  docker load < stathe-$(VERSION).tar.gz"
