@@ -1,0 +1,43 @@
+# NW-06: two service accounts holding cluster-admin.
+#
+# This is the finding that surprises people most during an assessment. Nobody
+# grants cluster-admin on purpose; it accumulates. A CI runner needed "just
+# enough" rights once, and nobody went back to narrow them down.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tracking-admin
+  labels:
+    nw-finding: "NW-06"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: tracking
+    namespace: northwind-tracking
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-runner
+  namespace: northwind-orders
+  labels:
+    nw-finding: "NW-06"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ci-runner-admin
+  labels:
+    nw-finding: "NW-06"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: ci-runner
+    namespace: northwind-orders

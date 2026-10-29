@@ -1,0 +1,73 @@
+# The tracking service.
+#
+# This is the namespace used as the pilot during a baseline day, so it carries
+# the most instructive weaknesses.
+#
+# Deliberate weaknesses:
+#   NW-03  end-of-life base image
+#   NW-05  privileged container with host path access
+#   NW-06  service account bound to cluster-admin (see 50-rbac.yaml)
+#   NW-09  no resource limits
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tracking
+  namespace: northwind-tracking
+  labels:
+    nw-finding: "NW-06"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tracking
+  namespace: northwind-tracking
+  labels:
+    app: tracking
+    nw-finding: "NW-03,NW-05,NW-06,NW-09"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tracking
+  template:
+    metadata:
+      labels:
+        app: tracking
+    spec:
+      # NW-06: this token is now readable from inside the pod, and it is
+      # cluster-admin. Whoever reaches this container owns the cluster.
+      serviceAccountName: tracking
+      containers:
+        - name: tracking
+          # NW-03: Python 3.8 is end of life.
+          image: python:3.8-alpine
+          command: ["python", "-m", "http.server", "8000"]
+          ports:
+            - containerPort: 8000
+          securityContext:
+            # NW-05: privileged is the single most dangerous setting here. It
+            # disables nearly every container isolation mechanism at once.
+            privileged: true
+            runAsUser: 0
+          volumeMounts:
+            - name: host-root
+              mountPath: /host
+      volumes:
+        # NW-05: the node's filesystem, mounted into a pod.
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tracking
+  namespace: northwind-tracking
+spec:
+  selector:
+    app: tracking
+  ports:
+    - port: 8000
+      targetPort: 8000

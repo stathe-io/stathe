@@ -1,0 +1,63 @@
+# The public front end.
+#
+# Deliberate weaknesses:
+#   NW-07  mutable image tag (:latest)
+#   NW-09  no resource limits
+#   NW-05  runs as root, no securityContext at all
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: northwind-web
+  labels:
+    app: web
+    nw-finding: "NW-05,NW-07,NW-09"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          # NW-07: a tag someone else can move under you.
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+          # NW-09: no resources block, so this pod can take the whole node.
+          # NW-05: no securityContext, so it runs as root.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: northwind-web
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: northwind-web
+spec:
+  rules:
+    - host: northwind.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80
