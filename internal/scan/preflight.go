@@ -1,0 +1,227 @@
+package scan
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	authv1 "k8s.io/api/authorization/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+)
+
+// Preflight answers one question, the day before an assessment: if we run
+// stathe tomorrow morning, will it work?
+//
+// This exists because the expensive failure is not a missing check. It is
+// arriving at a client, sitting down with four of their engineers, and finding
+// out that the account they prepared cannot list ClusterRoleBindings. That
+// costs a morning of six people. Asking the API server a day earlier costs
+// nothing.
+//
+// It needs exactly the access `stathe check` needs and not a byte more, which
+// is also the point: if preflight passes, the RBAC that was approved is right.
+
+// Access is the verdict on one resource type.
+type Access struct {
+	Resource string
+	Group    string
+	Allowed  bool
+	Reason   string
+}
+
+// Platform is what the cluster turned out to be running. Every field is best
+// effort: a blank one means stathe could not tell, not that it is absent.
+type Platform struct {
+	Ingress string
+	CNI     string
+	GitOps  string
+}
+
+// PreflightResult is the whole report. OK is the go/no-go.
+type PreflightResult struct {
+	Context  string
+	Server   string
+	Version  string
+	Access   []Access
+	Platform Platform
+	OK       bool
+}
+
+// Preflight checks reachability, then permission per resource type, then makes
+// a best effort at identifying the platform so the baseline can be prepared in
+// advance rather than improvised on the day.
+func Preflight(ctxName string) (*PreflightResult, error) {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	overrides := &clientcmd.ConfigOverrides{}
+	if ctxName != "" {
+		overrides.CurrentContext = ctxName
+	}
+	cc := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides)
+
+	cfg, err := cc.ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("could not load kubeconfig: %w", err)
+	}
+
+	res := &PreflightResult{Context: ctxName, Server: cfg.Host}
+	if res.Context == "" {
+		if raw, err := cc.RawConfig(); err == nil {
+			res.Context = raw.CurrentContext
+		}
+	}
+
+	clients, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create client: %w", err)
+	}
+
+	// Reachability first. Everything below is meaningless if this fails, and
+	// the error it returns is the one worth showing a client.
+	ver, err := clients.Discovery().ServerVersion()
+	if err != nil {
+		return nil, fmt.Errorf("could not reach the API server at %s: %w", cfg.Host, err)
+	}
+	res.Version = ver.GitVersion
+
+	ctx := context.Background()
+	res.OK = true
+
+	// SelfSubjectAccessReview asks the API server what this identity may do.
+	// It is the honest way to check: it accounts for every Role, binding and
+	// webhook in play, rather than reading RBAC objects and guessing.
+	for _, w := range wanted {
+		a := Access{Resource: w.gvr.Resource, Group: w.gvr.Group}
+
+		review := &authv1.SelfSubjectAccessReview{
+			Spec: authv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authv1.ResourceAttributes{
+					Group:    w.gvr.Group,
+					Version:  w.gvr.Version,
+					Resource: w.gvr.Resource,
+					Verb:     "list",
+				},
+			},
+		}
+
+		out, err := clients.AuthorizationV1().
+			SelfSubjectAccessReviews().
+			Create(ctx, review, metav1.CreateOptions{})
+		if err != nil {
+			// Some managed clusters restrict the review API itself. Fall back
+			// to trying the list, which answers the same question less politely.
+			a.Allowed, a.Reason = tryList(ctx, cfg, w.gvr.Group, w.gvr.Version, w.gvr.Resource)
+		} else {
+			a.Allowed = out.Status.Allowed
+			a.Reason = out.Status.Reason
+			if !a.Allowed && a.Reason == "" {
+				a.Reason = "not permitted for this account"
+			}
+		}
+
+		if !a.Allowed {
+			res.OK = false
+		}
+		res.Access = append(res.Access, a)
+	}
+
+	res.Platform = detectPlatform(ctx, cfg)
+	return res, nil
+}
+
+// tryList is the fallback when SelfSubjectAccessReview is unavailable. It asks
+// for a single item, which is enough to learn whether the verb is permitted
+// without pulling the whole collection.
+func tryList(ctx context.Context, cfg *rest.Config, group, version, resource string) (bool, string) {
+	client, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return false, "could not create client"
+	}
+	gvr := gvrOf(group, version, resource)
+	if _, err := client.Resource(gvr).List(ctx, metav1.ListOptions{Limit: 1}); err != nil {
+		return false, short(err.Error())
+	}
+	return true, "confirmed by listing"
+}
+
+// detectPlatform identifies the ingress controller, CNI and GitOps tool from
+// the workloads that are running. It deliberately uses only the access stathe
+// already has, so preflight never asks a client for more than the assessment
+// itself will.
+func detectPlatform(ctx context.Context, cfg *rest.Config) Platform {
+	var p Platform
+
+	client, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return p
+	}
+
+	names := map[string]bool{}
+	for _, resource := range []string{"deployments", "daemonsets", "statefulsets"} {
+		list, err := client.Resource(gvrOf("apps", "v1", resource)).
+			List(ctx, metav1.ListOptions{})
+		if err != nil {
+			continue
+		}
+		for _, item := range list.Items {
+			names[item.GetName()] = true
+		}
+	}
+
+	match := func(table [][2]string) string {
+		for _, row := range table {
+			for name := range names {
+				if strings.Contains(name, row[0]) {
+					return row[1]
+				}
+			}
+		}
+		return ""
+	}
+
+	p.Ingress = match([][2]string{
+		{"ingress-nginx-controller", "NGINX Ingress"},
+		{"nginx-ingress", "NGINX Ingress"},
+		{"traefik", "Traefik"},
+		{"haproxy-ingress", "HAProxy Ingress"},
+		{"istio-ingressgateway", "Istio ingress gateway"},
+		{"contour", "Contour"},
+	})
+	p.CNI = match([][2]string{
+		{"calico-node", "Calico"},
+		{"cilium", "Cilium"},
+		{"kube-flannel", "Flannel"},
+		{"aws-node", "AWS VPC CNI"},
+		{"kube-router", "kube-router"},
+	})
+	p.GitOps = match([][2]string{
+		{"argocd-application-controller", "Argo CD"},
+		{"argocd-server", "Argo CD"},
+		{"kustomize-controller", "Flux"},
+		{"source-controller", "Flux"},
+	})
+
+	return p
+}
+
+// short trims an API error to the part a reader needs. The full text carries
+// the whole request, which buries the reason.
+func short(s string) string {
+	if i := strings.Index(s, ":"); i > 0 && i < len(s)-2 {
+		s = strings.TrimSpace(s[i+1:])
+	}
+	if len(s) > 90 {
+		s = s[:90] + "..."
+	}
+	return s
+}
+
+// gvrOf is a shorthand, because the three-field literal makes the tables above
+// unreadable.
+func gvrOf(group, version, resource string) schema.GroupVersionResource {
+	return schema.GroupVersionResource{Group: group, Version: version, Resource: resource}
+}

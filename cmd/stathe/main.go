@@ -21,6 +21,7 @@ Usage:
   stathe check --context NAME     Assess a live cluster (read-only)
   stathe check                    Assess the current kubectl context
   stathe report --client NAME     Turn findings into a client-ready document
+  stathe preflight --context NAME Check access the day before an assessment
   stathe compliance               Which NIS2 measures these checks can evidence
   stathe version
 
@@ -45,6 +46,8 @@ func main() {
 		os.Exit(runReport(os.Args[2:]))
 	case "compliance":
 		os.Exit(runCompliance(os.Args[2:]))
+	case "preflight":
+		os.Exit(runPreflight(os.Args[2:]))
 	case "version":
 		fmt.Println("stathe", version)
 	case "-h", "--help", "help":
@@ -217,6 +220,65 @@ func runReport(args []string) int {
 	if *out != "" {
 		fmt.Fprintf(os.Stderr, "wrote %s (%d findings)\n", *out, len(findings))
 	}
+	return 0
+}
+
+// runPreflight is the day-before check. It exits non-zero on a no-go so it can
+// sit in a pipeline, and prints the missing permission rather than a generic
+// failure, because the person who has to fix it is usually not in the room.
+func runPreflight(args []string) int {
+	fs := flag.NewFlagSet("preflight", flag.ExitOnError)
+	kubeContext := fs.String("context", "", "kubectl context to check")
+	fs.Parse(args)
+
+	res, err := scan.Preflight(*kubeContext)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "no-go: %v\n", err)
+		return 1
+	}
+
+	fmt.Printf("Context   %s\n", res.Context)
+	fmt.Printf("Server    %s\n", res.Server)
+	fmt.Printf("Version   %s\n\n", res.Version)
+
+	fmt.Println("ACCESS")
+	for _, a := range res.Access {
+		name := a.Resource
+		if a.Group != "" {
+			name = a.Resource + "." + a.Group
+		}
+		mark := "ok  "
+		if !a.Allowed {
+			mark = "MISSING"
+		}
+		fmt.Printf("  %-8s list %-36s %s\n", mark, name, a.Reason)
+	}
+
+	fmt.Println("\nPLATFORM")
+	for _, row := range [][2]string{
+		{"Ingress", res.Platform.Ingress},
+		{"CNI", res.Platform.CNI},
+		{"GitOps", res.Platform.GitOps},
+	} {
+		value := row[1]
+		if value == "" {
+			// Not an error. It means the baseline variant has to be chosen by
+			// asking rather than by looking, which is worth knowing a day early.
+			value = "could not tell — ask during the kickoff"
+		}
+		fmt.Printf("  %-9s %s\n", row[0], value)
+	}
+
+	fmt.Println()
+	if !res.OK {
+		fmt.Println("NO-GO. stathe check cannot read everything it needs.")
+		fmt.Println("Apply cluster/readonly-rbac.yaml, or have the cluster owner grant")
+		fmt.Println("list on the resources marked MISSING above, then run this again.")
+		return 1
+	}
+
+	fmt.Println("GO. stathe check has everything it needs.")
+	fmt.Println("Nothing was changed. This command only reads.")
 	return 0
 }
 

@@ -20,7 +20,7 @@ repository is what you do about it.
 | `stathe report` | works | Turns the findings into a client-ready document |
 | `stathe compliance` | works | Which NIS2 measures these checks can and cannot evidence |
 | `stathe baseline` | not built | Generates the baseline as a merge request for your own repo |
-| `stathe preflight` | not built | Verifies access before a cluster is assessed |
+| `stathe preflight` | works | Verifies access and identifies the platform before the day |
 
 ```sh
 go run ./cmd/stathe check --manifests cluster/northwind
