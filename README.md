@@ -28,6 +28,37 @@ go run ./cmd/stathe check --context my-cluster --framework nis2
 go run ./cmd/stathe compliance
 ```
 
+## In a pipeline
+
+`check` exits 0 by default, even with findings. A tool that starts breaking
+builds the day someone upgrades it gets removed from the pipeline, so failing
+is something you opt into:
+
+```sh
+stathe check --manifests ./k8s --fail-on high
+```
+
+## Accepted risk
+
+`.stathe.yaml` next to the manifests records what you have decided to live
+with. Every entry needs a reason and an expiry date:
+
+```yaml
+exceptions:
+  - id: NW-09
+    resource: "payments/*"        # or an exact resource, or "*"
+    reason: "LimitRange on the namespace sets a default memory limit"
+    expires: 2027-03-01
+```
+
+An entry missing either is refused rather than honoured. An undocumented
+suppression is how a risk stops existing on paper while still existing in the
+cluster, and an acceptance with no end date is a decision nobody revisits.
+
+Accepted findings are still counted and printed, never silently dropped. When
+an expiry passes the finding comes back, with the reason it was accepted and
+the date that ran out.
+
 ## Permissions
 
 `stathe` only ever lists. [`cluster/readonly-rbac.yaml`](cluster/readonly-rbac.yaml)

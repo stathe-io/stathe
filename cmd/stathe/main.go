@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/TestRebel/stathe/internal/baseline"
 	"github.com/TestRebel/stathe/internal/report"
@@ -32,6 +33,10 @@ Flags:
   --json              Emit findings as JSON instead of a table
   --framework NAME    Show the obligation each finding is evidence about
                       (nis2, dora, iso27001)
+  --fail-on LEVEL     Exit 1 when a finding at this severity or above remains
+                      (high, medium, low, none). Default none.
+  --exceptions DIR    Where to look for .stathe.yaml, the accepted-risk
+                      register. Each entry needs a reason and an expiry date.
 
 stathe only ever reads. It never writes to a cluster.
 `
@@ -69,7 +74,15 @@ func runCheck(args []string) int {
 	kubeContext := fs.String("context", "", "kubectl context to assess")
 	asJSON := fs.Bool("json", false, "emit findings as JSON")
 	framework := fs.String("framework", "", "annotate findings with obligations (nis2, dora, iso27001)")
+	failOn := fs.String("fail-on", "none", "exit 1 when a finding at this severity or above remains (high, medium, low, none)")
+	exceptionsDir := fs.String("exceptions", "", "directory holding .stathe.yaml (default: the manifests dir, or the working directory)")
 	fs.Parse(args)
+
+	threshold, ok := failThreshold(*failOn)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "unknown --fail-on %q; use high, medium, low or none\n", *failOn)
+		return 2
+	}
 
 	if *manifests != "" && *kubeContext != "" {
 		fmt.Fprintln(os.Stderr, "use either --manifests or --context, not both")
@@ -110,6 +123,22 @@ func runCheck(args []string) int {
 
 	findings := scan.Run(resources)
 
+	// Accepted risk is applied before anything is printed or counted, so the
+	// JSON a pipeline consumes and the table a human reads agree.
+	exDir := *exceptionsDir
+	if exDir == "" {
+		exDir = *manifests
+	}
+	if exDir == "" {
+		exDir = "."
+	}
+	exceptions, err := scan.LoadExceptions(exDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 2
+	}
+	findings, accepted, lapsed := scan.ApplyExceptions(findings, exceptions, time.Now())
+
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -144,9 +173,62 @@ func runCheck(args []string) int {
 	}
 	fmt.Printf("\n%d findings: %d high, %d medium, %d low\n",
 		len(findings), counts[scan.High], counts[scan.Medium], counts[scan.Low])
+
+	// Accepted risk is shown, never silently dropped. A run that hides what it
+	// suppressed is the one an auditor catches.
+	if len(accepted) > 0 {
+		fmt.Printf("\n%d accepted in %s:\n", len(accepted), scan.ExceptionsFileName)
+		for _, a := range accepted {
+			fmt.Printf("  %-7s %-44s %s (until %s)\n",
+				a.Finding.ID, a.Finding.Resource, a.Exception.Reason, a.Exception.Expires)
+		}
+	}
+	for _, e := range lapsed {
+		fmt.Printf("\nThe acceptance of %s on %s expired on %s and no longer applies.\n",
+			e.ID, e.Resource, e.Expires)
+		fmt.Printf("  It was accepted because: %s\n", e.Reason)
+		fmt.Println("  Renew the date after deciding again, or fix the finding.")
+	}
+
 	fmt.Println("\nNothing was changed. This command only reads.")
 
+	if threshold >= 0 {
+		for _, f := range findings {
+			if rankOf(f.Risk) <= threshold {
+				fmt.Printf("\nFailing: %s findings remain and --fail-on is %s.\n", f.Risk, *failOn)
+				return 1
+			}
+		}
+	}
 	return 0
+}
+
+// failThreshold maps --fail-on onto the risk ranking. -1 means never fail,
+// which stays the default: a tool that starts breaking builds the day someone
+// upgrades it gets removed from the pipeline.
+func failThreshold(s string) (int, bool) {
+	switch s {
+	case "none", "":
+		return -1, true
+	case "high":
+		return 0, true
+	case "medium":
+		return 1, true
+	case "low":
+		return 2, true
+	}
+	return 0, false
+}
+
+func rankOf(r scan.Risk) int {
+	switch r {
+	case scan.High:
+		return 0
+	case scan.Medium:
+		return 1
+	default:
+		return 2
+	}
 }
 
 // version is set at build time with -ldflags. The report prints it, because a
