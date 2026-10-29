@@ -94,14 +94,14 @@ func TestNIS2CoverageIsHonest(t *testing.T) {
 // TestControlsForFiltersByFramework guards the filter itself, since a broken
 // filter would put ISO control numbers in a NIS2 report.
 func TestControlsForFiltersByFramework(t *testing.T) {
-	all := ControlsFor("NW-06", "")
+	all := ControlsFor("SC-06", "")
 	if len(all) == 0 {
-		t.Fatal("NW-06 should map to something")
+		t.Fatal("SC-06 should map to something")
 	}
 
-	nis2 := ControlsFor("NW-06", NIS2)
+	nis2 := ControlsFor("SC-06", NIS2)
 	if len(nis2) == 0 {
-		t.Fatal("NW-06 should map to a NIS2 measure")
+		t.Fatal("SC-06 should map to a NIS2 measure")
 	}
 	for _, c := range nis2 {
 		if c.Framework != NIS2 {
@@ -112,7 +112,7 @@ func TestControlsForFiltersByFramework(t *testing.T) {
 		t.Error("the NIS2 filter returned everything, so it is not filtering")
 	}
 
-	if got := ControlsFor("NW-99", NIS2); got != nil {
+	if got := ControlsFor("SC-99", NIS2); got != nil {
 		t.Errorf("an unknown finding should map to nothing, got %v", got)
 	}
 }

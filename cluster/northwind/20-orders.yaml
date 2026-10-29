@@ -1,19 +1,19 @@
 # The orders service and its database.
 #
 # Deliberate weaknesses:
-#   NW-03  end-of-life base image with known critical vulnerabilities
-#   NW-04  database credentials in a ConfigMap, in plain text
-#   NW-09  no resource limits
-#   NW-05  runs as root
+#   SC-03  end-of-life base image with known critical vulnerabilities
+#   SC-04  database credentials in a ConfigMap, in plain text
+#   SC-09  no resource limits
+#   SC-05  runs as root
 ---
-# NW-04: credentials in a ConfigMap. Not even base64, let alone a secret store.
+# SC-04: credentials in a ConfigMap. Not even base64, let alone a secret store.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: orders-config
   namespace: northwind-orders
   annotations:
-    stathe.io/findings: "NW-04"
+    stathe.io/findings: "SC-04"
 data:
   DB_HOST: postgres.northwind-orders.svc.cluster.local
   DB_USER: northwind
@@ -28,7 +28,7 @@ metadata:
   labels:
     app: orders
   annotations:
-    stathe.io/findings: "NW-03,NW-04,NW-05,NW-09"
+    stathe.io/findings: "SC-03,SC-04,SC-05,SC-09"
 spec:
   replicas: 1
   selector:
@@ -41,7 +41,7 @@ spec:
     spec:
       containers:
         - name: orders
-          # NW-03: Node 16 went end of life in 2023. No fixes are coming.
+          # SC-03: Node 16 went end of life in 2023. No fixes are coming.
           image: node:16-alpine
           command: ["node", "-e"]
           args:
@@ -77,7 +77,7 @@ metadata:
   labels:
     app: postgres
   annotations:
-    stathe.io/findings: "NW-03,NW-09"
+    stathe.io/findings: "SC-03,SC-09"
 spec:
   replicas: 1
   selector:

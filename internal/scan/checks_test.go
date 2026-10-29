@@ -281,13 +281,13 @@ func TestNorthwindFindings(t *testing.T) {
 	// Each entry is a weakness attack.md walks a workshop through, described
 	// by a phrase that must appear in the reported detail.
 	required := map[string]string{
-		"NW-01 no network separation":      "no NetworkPolicy",
-		"NW-04 credentials in a ConfigMap": "credentials in plain text",
-		"NW-05 a privileged container":     "runs privileged",
-		"NW-05 the node filesystem mount":  "mounts the node filesystem",
-		"NW-06 cluster-admin granted":      "grants cluster-admin",
-		"NW-07 a floating image tag":       "floating tag",
-		"NW-09 no memory limit":            "no memory limit",
+		"SC-01 no network separation":      "no NetworkPolicy",
+		"SC-04 credentials in a ConfigMap": "credentials in plain text",
+		"SC-05 a privileged container":     "runs privileged",
+		"SC-05 the node filesystem mount":  "mounts the node filesystem",
+		"SC-06 cluster-admin granted":      "grants cluster-admin",
+		"SC-07 a floating image tag":       "floating tag",
+		"SC-09 no memory limit":            "no memory limit",
 	}
 
 	for weakness, phrase := range required {

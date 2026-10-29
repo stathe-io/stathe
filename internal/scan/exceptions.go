@@ -78,7 +78,7 @@ func LoadExceptions(dir string) ([]Exception, error) {
 		where := fmt.Sprintf("%s entry %d", path, i+1)
 
 		if e.ID == "" {
-			return nil, fmt.Errorf("%s: needs an id, for example NW-09", where)
+			return nil, fmt.Errorf("%s: needs an id, for example SC-09", where)
 		}
 		if e.Resource == "" {
 			return nil, fmt.Errorf("%s (%s): needs a resource, or \"*\" for every resource", where, e.ID)

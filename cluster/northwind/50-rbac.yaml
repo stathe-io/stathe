@@ -1,4 +1,4 @@
-# NW-06: two service accounts holding cluster-admin.
+# SC-06: two service accounts holding cluster-admin.
 #
 # This is the finding that surprises people most during an assessment. Nobody
 # grants cluster-admin on purpose; it accumulates. A CI runner needed "just
@@ -9,7 +9,7 @@ kind: ClusterRoleBinding
 metadata:
   name: tracking-admin
   annotations:
-    stathe.io/findings: "NW-06"
+    stathe.io/findings: "SC-06"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -25,14 +25,14 @@ metadata:
   name: ci-runner
   namespace: northwind-orders
   annotations:
-    stathe.io/findings: "NW-06"
+    stathe.io/findings: "SC-06"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: ci-runner-admin
   annotations:
-    stathe.io/findings: "NW-06"
+    stathe.io/findings: "SC-06"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

@@ -45,7 +45,7 @@ with. Every entry needs a reason and an expiry date:
 
 ```yaml
 exceptions:
-  - id: NW-09
+  - id: SC-09
     resource: "payments/*"        # or an exact resource, or "*"
     reason: "LimitRange on the namespace sets a default memory limit"
     expires: 2027-03-01

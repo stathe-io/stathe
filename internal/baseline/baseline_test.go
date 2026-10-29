@@ -7,8 +7,8 @@ import (
 	"github.com/TestRebel/stathe/internal/scan"
 )
 
-func nw01(ns string) scan.Finding {
-	return scan.Finding{ID: "NW-01", Risk: scan.High, Resource: "namespace/" + ns}
+func sc01(ns string) scan.Finding {
+	return scan.Finding{ID: "SC-01", Risk: scan.High, Resource: "namespace/" + ns}
 }
 
 // TestOnlyCoversAssessedNamespaces guards the rule that the baseline can never
@@ -16,14 +16,14 @@ func nw01(ns string) scan.Finding {
 // nobody looked at is how you take down a service you have never seen.
 func TestOnlyCoversAssessedNamespaces(t *testing.T) {
 	files := Generate([]scan.Finding{
-		nw01("payments"),
-		// Not an NW-01, so "logging" has a policy already and must not appear.
-		{ID: "NW-05", Risk: scan.High, Resource: "logging/deployment/fluentd"},
+		sc01("payments"),
+		// Not an SC-01, so "logging" has a policy already and must not appear.
+		{ID: "SC-05", Risk: scan.High, Resource: "logging/deployment/fluentd"},
 	}, Options{})
 
 	for _, f := range files {
 		if strings.Contains(f.Name, "logging") {
-			t.Errorf("generated %s for a namespace with no NW-01 finding", f.Name)
+			t.Errorf("generated %s for a namespace with no SC-01 finding", f.Name)
 		}
 	}
 	if !hasFile(files, "enforcing/payments-network-policy.yaml") {
@@ -35,7 +35,7 @@ func TestOnlyCoversAssessedNamespaces(t *testing.T) {
 // policies should get an empty result, not a directory of files implying work.
 func TestNothingToDo(t *testing.T) {
 	files := Generate([]scan.Finding{
-		{ID: "NW-07", Risk: scan.Medium, Resource: "web/deployment/api"},
+		{ID: "SC-07", Risk: scan.Medium, Resource: "web/deployment/api"},
 	}, Options{})
 	if len(files) != 0 {
 		t.Errorf("expected nothing to generate, got %d files", len(files))
@@ -49,7 +49,7 @@ func TestNothingToDo(t *testing.T) {
 // label slipping into those files would make that a lie and could take down a
 // client's namespace. Nothing in warn/ may ever carry enforce.
 func TestWarnHalfNeverEnforces(t *testing.T) {
-	files := Generate([]scan.Finding{nw01("payments")}, Options{})
+	files := Generate([]scan.Finding{sc01("payments")}, Options{})
 
 	for _, f := range files {
 		if !strings.HasPrefix(f.Name, "warn/") {
@@ -70,7 +70,7 @@ func TestWarnHalfNeverEnforces(t *testing.T) {
 // announce it, because the reader decides on a change window based on that
 // warning alone.
 func TestEnforcingHalfSaysSo(t *testing.T) {
-	files := Generate([]scan.Finding{nw01("payments")}, Options{})
+	files := Generate([]scan.Finding{sc01("payments")}, Options{})
 
 	for _, f := range files {
 		if !strings.HasPrefix(f.Name, "enforcing/") {
@@ -95,7 +95,7 @@ func TestEnforcingHalfSaysSo(t *testing.T) {
 // TestGeneratedPoliciesAreLabelled pins the label the rollback command selects
 // on. If these drift apart, the documented rollback silently deletes nothing.
 func TestGeneratedPoliciesAreLabelled(t *testing.T) {
-	files := Generate([]scan.Finding{nw01("payments")}, Options{})
+	files := Generate([]scan.Finding{sc01("payments")}, Options{})
 
 	for _, f := range files {
 		if !strings.HasPrefix(f.Name, "enforcing/") {
@@ -115,7 +115,7 @@ func TestGeneratedPoliciesAreLabelled(t *testing.T) {
 // produces something a reader must deal with, rather than a quietly wrong
 // namespace reference.
 func TestMissingIngressIsVisible(t *testing.T) {
-	files := Generate([]scan.Finding{nw01("payments")}, Options{})
+	files := Generate([]scan.Finding{sc01("payments")}, Options{})
 
 	var policy string
 	for _, f := range files {

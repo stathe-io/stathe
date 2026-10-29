@@ -34,7 +34,13 @@ func (f Finding) String() string {
 	return fmt.Sprintf("%-7s %-8s %-44s %s", f.ID, f.Risk, f.Resource, f.Detail)
 }
 
-// Catalogue holds the fixed wording per finding ID. Keeping it in one place is
+// Catalogue holds the fixed wording per finding ID.
+//
+// IDs are SC-nn, for stathe check. They are stable: an ID never changes
+// meaning and is never reused, because a client's previous report, their
+// .stathe.yaml and their ticket titles all refer to it. The numbering has
+// gaps where checks are planned but not written, which is deliberate -- a
+// renumbering would silently repoint every one of those references. Keeping it in one place is
 // what makes two assessments comparable, and what stops the report from
 // drifting into whatever phrasing seemed right that afternoon.
 var Catalogue = map[string]struct {
@@ -42,32 +48,32 @@ var Catalogue = map[string]struct {
 	Why   string
 	Next  string
 }{
-	"NW-01": {
+	"SC-01": {
 		Title: "No network separation between workloads",
 		Why:   "A single compromised component gives an attacker a direct path to every other service, including the database.",
 		Next:  "Apply a default-deny NetworkPolicy per namespace, with explicit exceptions for DNS and the ingress controller.",
 	},
-	"NW-04": {
+	"SC-04": {
 		Title: "Credentials stored in plain configuration",
 		Why:   "Anyone with read access to the repository or the namespace can read the password, including CI runners and backups.",
 		Next:  "Move the value to a Secret backed by a vault or Sealed Secrets, and rotate it.",
 	},
-	"NW-05": {
+	"SC-05": {
 		Title: "Container runs with excessive privileges",
 		Why:   "A privileged container that is broken into is effectively root on the node, not just inside the container.",
 		Next:  "Set runAsNonRoot, drop privileged, and add the capabilities the workload actually needs.",
 	},
-	"NW-06": {
+	"SC-06": {
 		Title: "Service account bound to cluster-admin",
 		Why:   "The token sits in every pod using that account. Whoever reaches one of those pods controls the whole cluster.",
 		Next:  "Determine the permissions actually used, write a Role for exactly those, and remove the binding.",
 	},
-	"NW-07": {
+	"SC-07": {
 		Title: "Workload uses a mutable image tag",
 		Why:   "A tag can point at different software tomorrow, so a restart can silently run an untested version and you cannot prove what ran during an incident.",
 		Next:  "Pin the image on digest and let Renovate propose updates.",
 	},
-	"NW-09": {
+	"SC-09": {
 		Title: "Workload has no resource limits",
 		Why:   "One bug or one crypto miner can consume the node and take every other workload on it down.",
 		Next:  "Set a memory limit per container and a LimitRange per namespace as a default.",

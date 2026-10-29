@@ -61,7 +61,7 @@ func CheckNetworkPolicies(rs []Resource) []Finding {
 
 	var out []Finding
 	for _, ns := range bare {
-		out = append(out, finding("NW-01", "namespace/"+ns,
+		out = append(out, finding("SC-01", "namespace/"+ns,
 			"no NetworkPolicy, so every pod here can reach every other pod in the cluster", High))
 	}
 	return out
@@ -88,7 +88,7 @@ func CheckClusterAdmin(rs []Resource) []Finding {
 			if ns := s["namespace"]; ns != "" {
 				name = ns + "/" + name
 			}
-			out = append(out, finding("NW-06", r.Ref(),
+			out = append(out, finding("SC-06", r.Ref(),
 				fmt.Sprintf("grants cluster-admin to %s %s", strings.ToLower(s["kind"]), name), High))
 		}
 	}
@@ -130,7 +130,7 @@ func CheckPlainCredentials(rs []Resource) []Finding {
 		}
 		if len(hits) > 0 {
 			sort.Strings(hits)
-			out = append(out, finding("NW-04", r.Ref(),
+			out = append(out, finding("SC-04", r.Ref(),
 				"holds credentials in plain text: "+strings.Join(hits, ", "), High))
 		}
 	}
@@ -154,7 +154,7 @@ func CheckMutableTags(rs []Resource) []Finding {
 				risk = High
 				detail = fmt.Sprintf("image %q uses a floating tag that can change under you", image)
 			}
-			out = append(out, finding("NW-07", r.Ref(), detail, risk))
+			out = append(out, finding("SC-07", r.Ref(), detail, risk))
 		}
 	}
 	return out
@@ -169,21 +169,21 @@ func CheckPrivileged(rs []Resource) []Finding {
 			sc, _ := c["securityContext"].(map[string]interface{})
 
 			if priv, ok := sc["privileged"].(bool); ok && priv {
-				out = append(out, finding("NW-05", r.Ref(),
+				out = append(out, finding("SC-05", r.Ref(),
 					"runs privileged, which disables nearly all container isolation", High))
 			}
 			if uid, ok := sc["runAsUser"].(int); ok && uid == 0 {
-				out = append(out, finding("NW-05", r.Ref(), "runs as root (uid 0)", Medium))
+				out = append(out, finding("SC-05", r.Ref(), "runs as root (uid 0)", Medium))
 			}
 			if sc == nil {
-				out = append(out, finding("NW-05", r.Ref(),
+				out = append(out, finding("SC-05", r.Ref(),
 					"has no securityContext, so it runs with the image default, usually root", Medium))
 			}
 		}
 
 		for _, v := range volumes(r) {
 			if hp, ok := v["hostPath"].(map[string]interface{}); ok {
-				out = append(out, finding("NW-05", r.Ref(),
+				out = append(out, finding("SC-05", r.Ref(),
 					fmt.Sprintf("mounts the node filesystem at %v", hp["path"]), High))
 			}
 		}
@@ -220,7 +220,7 @@ func CheckResourceLimits(rs []Resource) []Finding {
 			limits, _ := res["limits"].(map[string]interface{})
 			if _, ok := limits["memory"]; !ok {
 				name, _ := c["name"].(string)
-				out = append(out, finding("NW-09", r.Ref(),
+				out = append(out, finding("SC-09", r.Ref(),
 					fmt.Sprintf("container %q has no memory limit", name), Low))
 			}
 		}

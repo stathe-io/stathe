@@ -47,7 +47,7 @@ type Options struct {
 
 // Generate produces the baseline for the namespaces that need one.
 //
-// Only NW-01 drives it today: the namespaces with no network separation at
+// Only SC-01 drives it today: the namespaces with no network separation at
 // all. That is deliberate. The other findings are fixed by editing the
 // workload the team already owns, and generating a patch for someone else's
 // Deployment is how you end up owning their repository.
@@ -78,15 +78,15 @@ func Generate(findings []scan.Finding, opt Options) []File {
 	return out
 }
 
-// namespacesNeedingPolicy reads the NW-01 findings rather than taking a list,
+// namespacesNeedingPolicy reads the SC-01 findings rather than taking a list,
 // so the baseline can only ever cover ground the assessment actually walked.
 func namespacesNeedingPolicy(findings []scan.Finding) []string {
 	seen := map[string]bool{}
 	for _, f := range findings {
-		if f.ID != "NW-01" {
+		if f.ID != "SC-01" {
 			continue
 		}
-		// NW-01 names its resource as "namespace/<name>".
+		// SC-01 names its resource as "namespace/<name>".
 		if ns, ok := strings.CutPrefix(f.Resource, "namespace/"); ok {
 			seen[ns] = true
 		}
@@ -127,7 +127,7 @@ metadata:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/audit-version: latest
   annotations:
-    stathe.io/addresses: "NW-05"
+    stathe.io/addresses: "SC-05"
     stathe.io/mode: "reporting only, blocks nothing"
 `, ns)
 }
@@ -177,7 +177,7 @@ metadata:
   labels:
     stathe.io/generated: "true"
   annotations:
-    stathe.io/addresses: "NW-01"
+    stathe.io/addresses: "SC-01"
 spec:
   # An empty podSelector selects every pod in the namespace.
   podSelector: {}
@@ -192,7 +192,7 @@ metadata:
   labels:
     stathe.io/generated: "true"
   annotations:
-    stathe.io/addresses: "NW-01"
+    stathe.io/addresses: "SC-01"
 spec:
   podSelector: {}
   policyTypes:
@@ -210,7 +210,7 @@ metadata:
   labels:
     stathe.io/generated: "true"
   annotations:
-    stathe.io/addresses: "NW-01"
+    stathe.io/addresses: "SC-01"
 spec:
   podSelector: {}
   policyTypes:
@@ -281,7 +281,7 @@ func readme(namespaces []string, opt Options) string {
 	for _, ns := range namespaces {
 		b.WriteString(fmt.Sprintf("- `%s`\n", ns))
 	}
-	b.WriteString("\nThese are the namespaces that had no NetworkPolicy at all (NW-01).\n")
+	b.WriteString("\nThese are the namespaces that had no NetworkPolicy at all (SC-01).\n")
 
 	if opt.Ingress != "" {
 		b.WriteString(fmt.Sprintf("\nIngress controller detected: **%s** in `%s`.\n",

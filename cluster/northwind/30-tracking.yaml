@@ -4,10 +4,10 @@
 # the most instructive weaknesses.
 #
 # Deliberate weaknesses:
-#   NW-03  end-of-life base image
-#   NW-05  privileged container with host path access
-#   NW-06  service account bound to cluster-admin (see 50-rbac.yaml)
-#   NW-09  no resource limits
+#   SC-03  end-of-life base image
+#   SC-05  privileged container with host path access
+#   SC-06  service account bound to cluster-admin (see 50-rbac.yaml)
+#   SC-09  no resource limits
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -15,7 +15,7 @@ metadata:
   name: tracking
   namespace: northwind-tracking
   annotations:
-    stathe.io/findings: "NW-06"
+    stathe.io/findings: "SC-06"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -25,7 +25,7 @@ metadata:
   labels:
     app: tracking
   annotations:
-    stathe.io/findings: "NW-03,NW-05,NW-06,NW-09"
+    stathe.io/findings: "SC-03,SC-05,SC-06,SC-09"
 spec:
   replicas: 1
   selector:
@@ -36,18 +36,18 @@ spec:
       labels:
         app: tracking
     spec:
-      # NW-06: this token is now readable from inside the pod, and it is
+      # SC-06: this token is now readable from inside the pod, and it is
       # cluster-admin. Whoever reaches this container owns the cluster.
       serviceAccountName: tracking
       containers:
         - name: tracking
-          # NW-03: Python 3.8 is end of life.
+          # SC-03: Python 3.8 is end of life.
           image: python:3.8-alpine
           command: ["python", "-m", "http.server", "8000"]
           ports:
             - containerPort: 8000
           securityContext:
-            # NW-05: privileged is the single most dangerous setting here. It
+            # SC-05: privileged is the single most dangerous setting here. It
             # disables nearly every container isolation mechanism at once.
             privileged: true
             runAsUser: 0
@@ -55,7 +55,7 @@ spec:
             - name: host-root
               mountPath: /host
       volumes:
-        # NW-05: the node's filesystem, mounted into a pod.
+        # SC-05: the node's filesystem, mounted into a pod.
         - name: host-root
           hostPath:
             path: /

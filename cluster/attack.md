@@ -16,7 +16,7 @@ actually printed.
 
 ---
 
-## NW-01 · Every pod can reach every other pod
+## SC-01 · Every pod can reach every other pod
 
 The web front end is the one component exposed to the internet. The customer
 database lives in a different namespace, which feels like separation. It is not.
@@ -42,7 +42,7 @@ command times out while the application keeps working.
 
 ---
 
-## NW-04 · The database password is readable by anyone
+## SC-04 · The database password is readable by anyone
 
 It sits in a ConfigMap, which is not a secret and is rarely access-controlled.
 
@@ -66,7 +66,7 @@ external secret store. Moving the value is a change only your team can make.
 
 ---
 
-## NW-05 · A privileged container is root on the node
+## SC-05 · A privileged container is root on the node
 
 The tracking service runs privileged and mounts the host filesystem.
 
@@ -91,7 +91,7 @@ reports it immediately. Moving to enforce is a later, deliberate step.
 
 ---
 
-## NW-06 · A service account that owns the cluster
+## SC-06 · A service account that owns the cluster
 
 ```sh
 kubectl auth can-i --list --as=system:serviceaccount:northwind-tracking:tracking
@@ -119,7 +119,7 @@ remove the binding.
 
 ---
 
-## NW-07 · You cannot prove what is running
+## SC-07 · You cannot prove what is running
 
 ```sh
 kubectl -n northwind-web get deploy web -o jsonpath='{.spec.template.spec.containers[0].image}'
@@ -141,7 +141,7 @@ Pinning them is a change in your manifests, with Renovate proposing updates.
 
 ---
 
-## NW-03 and NW-09 · The quiet ones
+## SC-03 and SC-09 · The quiet ones
 
 Two base images are past end of life:
 

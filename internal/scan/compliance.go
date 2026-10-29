@@ -81,42 +81,42 @@ var nis2Measures = []Control{
 
 // controls maps a finding ID to the obligations it is evidence about.
 var controls = map[string][]Control{
-	"NW-01": {
+	"SC-01": {
 		{NIS2, "Art. 21(2)(a)", "Policies on risk analysis and information system security"},
 		{NIS2, "Art. 21(2)(i)", "Access control policies and asset management"},
 		{DORA, "Art. 9", "Protection and prevention"},
 		{ISO27001, "A.8.22", "Segregation of networks"},
 		{ISO27001, "A.8.20", "Networks security"},
 	},
-	"NW-04": {
+	"SC-04": {
 		{NIS2, "Art. 21(2)(h)", "Policies on the use of cryptography and encryption"},
 		{NIS2, "Art. 21(2)(i)", "Access control policies and asset management"},
 		{DORA, "Art. 9", "Protection and prevention"},
 		{ISO27001, "A.5.17", "Authentication information"},
 		{ISO27001, "A.8.24", "Use of cryptography"},
 	},
-	"NW-05": {
+	"SC-05": {
 		{NIS2, "Art. 21(2)(e)", "Security in acquisition, development and maintenance"},
 		{NIS2, "Art. 21(2)(i)", "Access control policies and asset management"},
 		{DORA, "Art. 9", "Protection and prevention"},
 		{ISO27001, "A.8.2", "Privileged access rights"},
 		{ISO27001, "A.8.9", "Configuration management"},
 	},
-	"NW-06": {
+	"SC-06": {
 		{NIS2, "Art. 21(2)(i)", "Access control policies and asset management"},
 		{DORA, "Art. 9", "Protection and prevention"},
 		{ISO27001, "A.5.15", "Access control"},
 		{ISO27001, "A.5.18", "Access rights"},
 		{ISO27001, "A.8.2", "Privileged access rights"},
 	},
-	"NW-07": {
+	"SC-07": {
 		{NIS2, "Art. 21(2)(d)", "Supply chain security"},
 		{NIS2, "Art. 21(2)(e)", "Security in acquisition, development and maintenance"},
 		{DORA, "Art. 28", "ICT third-party risk: general principles"},
 		{ISO27001, "A.5.21", "Managing information security in the ICT supply chain"},
 		{ISO27001, "A.8.32", "Change management"},
 	},
-	"NW-09": {
+	"SC-09": {
 		{NIS2, "Art. 21(2)(c)", "Business continuity, backup management and disaster recovery"},
 		{DORA, "Art. 11", "Response and recovery"},
 		{ISO27001, "A.8.6", "Capacity management"},

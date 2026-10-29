@@ -24,7 +24,7 @@ func writeExceptions(t *testing.T, body string) string {
 func TestReasonIsRequired(t *testing.T) {
 	dir := writeExceptions(t, `
 exceptions:
-  - id: NW-09
+  - id: SC-09
     resource: "payments/deployment/api"
     expires: 2027-03-01
 `)
@@ -40,7 +40,7 @@ exceptions:
 func TestExpiryIsRequired(t *testing.T) {
 	dir := writeExceptions(t, `
 exceptions:
-  - id: NW-09
+  - id: SC-09
     resource: "payments/deployment/api"
     reason: "LimitRange sets the default"
 `)
@@ -66,7 +66,7 @@ func TestMissingFileIsFine(t *testing.T) {
 func TestBadDateIsRejected(t *testing.T) {
 	dir := writeExceptions(t, `
 exceptions:
-  - id: NW-09
+  - id: SC-09
     resource: "*"
     reason: "accepted"
     expires: "next march"
@@ -78,17 +78,17 @@ exceptions:
 
 func fixture() []Finding {
 	return []Finding{
-		{ID: "NW-01", Risk: High, Resource: "namespace/payments"},
-		{ID: "NW-09", Risk: Low, Resource: "payments/deployment/api"},
-		{ID: "NW-09", Risk: Low, Resource: "payments/deployment/worker"},
-		{ID: "NW-09", Risk: Low, Resource: "billing/deployment/api"},
+		{ID: "SC-01", Risk: High, Resource: "namespace/payments"},
+		{ID: "SC-09", Risk: Low, Resource: "payments/deployment/api"},
+		{ID: "SC-09", Risk: Low, Resource: "payments/deployment/worker"},
+		{ID: "SC-09", Risk: Low, Resource: "billing/deployment/api"},
 	}
 }
 
 func TestPrefixMatchCoversANamespace(t *testing.T) {
 	dir := writeExceptions(t, `
 exceptions:
-  - id: NW-09
+  - id: SC-09
     resource: "payments/*"
     reason: "LimitRange on the namespace sets a default"
     expires: 2099-01-01
@@ -113,7 +113,7 @@ exceptions:
 		if f.Resource == "billing/deployment/api" {
 			sawBilling = true
 		}
-		if strings.HasPrefix(f.Resource, "payments/") && f.ID == "NW-09" {
+		if strings.HasPrefix(f.Resource, "payments/") && f.ID == "SC-09" {
 			t.Errorf("%s should have been accepted", f.Resource)
 		}
 	}
@@ -128,7 +128,7 @@ exceptions:
 func TestExpiredExceptionStopsSuppressing(t *testing.T) {
 	dir := writeExceptions(t, `
 exceptions:
-  - id: NW-09
+  - id: SC-09
     resource: "payments/*"
     reason: "LimitRange on the namespace sets a default"
     expires: 2020-01-01
@@ -159,7 +159,7 @@ exceptions:
 func TestSuppressedFindingsAreReturned(t *testing.T) {
 	dir := writeExceptions(t, `
 exceptions:
-  - id: NW-09
+  - id: SC-09
     resource: "*"
     reason: "memory limits are set by a mutating webhook"
     expires: 2099-01-01

@@ -31,9 +31,9 @@ var wanted = []struct {
 // They belong to the distribution rather than to the team being assessed, and
 // reporting on them buries the findings the team can actually act on.
 var skipNamespaces = map[string]bool{
-	"kube-system":     true,
-	"kube-public":     true,
-	"kube-node-lease": true,
+	"kube-system":        true,
+	"kube-public":        true,
+	"kube-node-lease":    true,
 	"local-path-storage": true,
 }
 

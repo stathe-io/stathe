@@ -1,9 +1,9 @@
 # The public front end.
 #
 # Deliberate weaknesses:
-#   NW-07  mutable image tag (:latest)
-#   NW-09  no resource limits
-#   NW-05  runs as root, no securityContext at all
+#   SC-07  mutable image tag (:latest)
+#   SC-09  no resource limits
+#   SC-05  runs as root, no securityContext at all
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -13,7 +13,7 @@ metadata:
   labels:
     app: web
   annotations:
-    stathe.io/findings: "NW-05,NW-07,NW-09"
+    stathe.io/findings: "SC-05,SC-07,SC-09"
 spec:
   replicas: 1
   selector:
@@ -26,12 +26,12 @@ spec:
     spec:
       containers:
         - name: web
-          # NW-07: a tag someone else can move under you.
+          # SC-07: a tag someone else can move under you.
           image: nginx:latest
           ports:
             - containerPort: 80
-          # NW-09: no resources block, so this pod can take the whole node.
-          # NW-05: no securityContext, so it runs as root.
+          # SC-09: no resources block, so this pod can take the whole node.
+          # SC-05: no securityContext, so it runs as root.
 ---
 apiVersion: v1
 kind: Service
