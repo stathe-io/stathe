@@ -1,36 +1,52 @@
-# k8s-security-baseline
+# stathe
 
-A practical security baseline for Kubernetes clusters, plus a deliberately insecure
-demo cluster to practise on.
+Find out how exposed your Kubernetes cluster is, without changing anything.
+
+```sh
+docker run --rm -v ~/.kube:/root/.kube:ro ghcr.io/stathe-io/stathe check
+```sh
+
+No account, no signup, no key. It reads, it reports, it changes nothing.
 
 Most clusters run on defaults: every workload can reach every other workload,
-containers have more rights than they need, and nobody can say exactly which
-software is running or where it came from. This repository collects the
-policies, network rules and scanning setup that fix that — in report-only mode
-first, so nothing breaks while you find out where you stand.
+containers hold more rights than they need, and nobody can say exactly which
+software is running or where it came from. `stathe check` tells you which of
+those apply to you. The rest of this repository is what you do about it.
 
-> **Status: early.** The demo cluster is being built first. Nothing here is
-> stable yet. Issues and pull requests are welcome.
+> **Status: early.** The demo cluster is being built first, then `check`.
+> Nothing here is stable yet. Issues and pull requests are welcome.
 
-## What this will contain
+## Commands
+
+| Command | What it does |
+|---|---|
+| `stathe check` | Read-only assessment of a cluster and its pipelines |
+| `stathe report` | Turns the findings into a readable report |
+| `stathe baseline` | Generates the baseline as a merge request for your own repo |
+| `stathe preflight` | Verifies access before a cluster is assessed |
+
+## Layout
 
 | Directory | Contents |
 |---|---|
-| `cluster/` | A k3d cluster with "Northwind", a demo app with ten deliberate weaknesses |
+| `cluster/` | A k3d cluster with "Northwind", a demo app carrying ten deliberate weaknesses |
 | `baseline/` | The baseline as Kustomize: Pod Security Admission, NetworkPolicies, Kyverno policies, Trivy Operator |
-| `insight/` | Read-only assessment scripts — what is running, and what is wrong with it |
-| `report/` | Turns the raw scan output into a readable report |
+| `insight/` | The checks behind `stathe check` |
+| `report/` | Report generation |
 
-## Getting started
+## Try it against the demo cluster
 
-```
+If you would rather not point an unfamiliar tool at your own cluster, start with
+one built to be broken:
+
+```sh
 git clone https://github.com/TestRebel/k8s-security-baseline
 cd k8s-security-baseline
 make up
-```
+```sh
 
-This brings up a local k3d cluster with the Northwind demo app. It should take
-under ten minutes on a clean laptop. `make down` removes everything again.
+This brings up a local k3d cluster running Northwind. It should take under ten
+minutes on a clean laptop, and `make down` removes all of it.
 
 See [`cluster/attack.md`](cluster/attack.md) for the walkthrough: how to
 demonstrate each weakness yourself, before you apply the baseline and watch the
