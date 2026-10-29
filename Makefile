@@ -53,3 +53,11 @@ check-deps:
 		command -v $$t >/dev/null 2>&1 || { echo "missing: $$t"; exit 1; }; \
 	done
 	@docker info >/dev/null 2>&1 || { echo "the docker daemon is not running"; exit 1; }
+
+.PHONY: test
+test: ## Run the test suite
+	go test ./...
+
+.PHONY: install
+install: ## Install the stathe binary into $$GOPATH/bin
+	go install ./cmd/stathe
