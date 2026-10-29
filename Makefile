@@ -41,8 +41,8 @@ validate-schema: ## Validate against a live API server (needs a cluster)
 
 .PHONY: findings
 findings: ## List the deliberate weaknesses and where they live
-	@grep -rho 'nw-finding: "[^"]*"' $(MANIFESTS) | \
-		sed 's/nw-finding: "//;s/"//' | tr ',' '\n' | sort -u | \
+	@grep -rho 'stathe.io/findings: "[^"]*"' $(MANIFESTS) | \
+		sed 's|stathe.io/findings: "||;s/"//' | tr ',' '\n' | sort -u | \
 		while read id; do \
 			printf "  %-7s %s\n" "$$id" "$$(grep -rl "$$id" $(MANIFESTS) | tr '\n' ' ')"; \
 		done

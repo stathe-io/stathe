@@ -12,8 +12,8 @@ kind: ConfigMap
 metadata:
   name: orders-config
   namespace: northwind-orders
-  labels:
-    nw-finding: "NW-04"
+  annotations:
+    stathe.io/findings: "NW-04"
 data:
   DB_HOST: postgres.northwind-orders.svc.cluster.local
   DB_USER: northwind
@@ -27,7 +27,8 @@ metadata:
   namespace: northwind-orders
   labels:
     app: orders
-    nw-finding: "NW-03,NW-04,NW-05,NW-09"
+  annotations:
+    stathe.io/findings: "NW-03,NW-04,NW-05,NW-09"
 spec:
   replicas: 1
   selector:
@@ -75,7 +76,8 @@ metadata:
   namespace: northwind-orders
   labels:
     app: postgres
-    nw-finding: "NW-03,NW-09"
+  annotations:
+    stathe.io/findings: "NW-03,NW-09"
 spec:
   replicas: 1
   selector:

@@ -14,8 +14,8 @@ kind: ServiceAccount
 metadata:
   name: tracking
   namespace: northwind-tracking
-  labels:
-    nw-finding: "NW-06"
+  annotations:
+    stathe.io/findings: "NW-06"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -24,7 +24,8 @@ metadata:
   namespace: northwind-tracking
   labels:
     app: tracking
-    nw-finding: "NW-03,NW-05,NW-06,NW-09"
+  annotations:
+    stathe.io/findings: "NW-03,NW-05,NW-06,NW-09"
 spec:
   replicas: 1
   selector:

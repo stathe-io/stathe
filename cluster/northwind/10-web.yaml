@@ -12,7 +12,8 @@ metadata:
   namespace: northwind-web
   labels:
     app: web
-    nw-finding: "NW-05,NW-07,NW-09"
+  annotations:
+    stathe.io/findings: "NW-05,NW-07,NW-09"
 spec:
   replicas: 1
   selector:

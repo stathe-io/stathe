@@ -2,7 +2,7 @@
 #
 # DO NOT APPLY THIS TO A CLUSTER YOU CARE ABOUT.
 #
-# Every weakness here is intentional and carries an nw-finding label matching
+# Every weakness here is intentional and carries a stathe.io/findings annotation matching
 # the finding IDs used in the sample report. No namespace gets Pod Security
 # Admission labels, which is itself part of the exercise.
 ---

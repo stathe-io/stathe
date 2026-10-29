@@ -8,8 +8,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: tracking-admin
-  labels:
-    nw-finding: "NW-06"
+  annotations:
+    stathe.io/findings: "NW-06"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -24,15 +24,15 @@ kind: ServiceAccount
 metadata:
   name: ci-runner
   namespace: northwind-orders
-  labels:
-    nw-finding: "NW-06"
+  annotations:
+    stathe.io/findings: "NW-06"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: ci-runner-admin
-  labels:
-    nw-finding: "NW-06"
+  annotations:
+    stathe.io/findings: "NW-06"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
