@@ -32,6 +32,7 @@ func finding(id, resource, detail string, risk Risk) Finding {
 		Detail:   detail,
 		Why:      c.Why,
 		Next:     c.Next,
+		Controls: ControlsFor(id, ""),
 	}
 }
 

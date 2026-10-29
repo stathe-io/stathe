@@ -42,6 +42,16 @@ type Group struct {
 	Resources []string
 }
 
+// Obligation is one article or control, with the findings that are evidence
+// about it. The report groups by obligation rather than by finding, because a
+// compliance officer reads down the regulation, not down the cluster.
+type Obligation struct {
+	Ref      string
+	Name     string
+	Findings []string // finding IDs
+	Count    int      // affected resources across those findings
+}
+
 type data struct {
 	Meta   Meta
 	Groups []Group
@@ -49,10 +59,18 @@ type data struct {
 	Medium int
 	Low    int
 	Total  int
+
+	// Framework is empty when the report was produced without --framework, in
+	// which case the template leaves the mapping section out entirely.
+	Framework     string
+	FrameworkName string
+	Obligations   []Obligation
+	NIS2Gaps      []scan.Control
 }
 
-// Write renders the report as HTML.
-func Write(w io.Writer, findings []scan.Finding, meta Meta) error {
+// Write renders the report as HTML. Pass an empty framework to leave the
+// regulatory mapping out.
+func Write(w io.Writer, findings []scan.Finding, meta Meta, framework scan.Framework) error {
 	if meta.Date == "" {
 		meta.Date = time.Now().Format("2 January 2006")
 	}
@@ -97,11 +115,53 @@ func Write(w io.Writer, findings []scan.Finding, meta Meta) error {
 		d.Groups = append(d.Groups, *byID[id])
 	}
 
+	if framework != "" {
+		d.Framework = string(framework)
+		d.FrameworkName = scan.FrameworkName[framework]
+		d.Obligations = obligations(d.Groups, framework)
+		if framework == scan.NIS2 {
+			for _, c := range scan.NIS2Coverage() {
+				if len(c.CheckIDs) == 0 {
+					d.NIS2Gaps = append(d.NIS2Gaps, c.Control)
+				}
+			}
+		}
+	}
+
 	tmpl, err := template.ParseFS(files, "template.html")
 	if err != nil {
 		return fmt.Errorf("could not parse the report template: %w", err)
 	}
 	return tmpl.Execute(w, d)
+}
+
+// obligations inverts the finding-to-control mapping: one row per article,
+// listing the checks that found something against it. An article that stathe
+// covers but found nothing against does not appear, because the report is
+// about this cluster and not about the catalogue.
+func obligations(groups []Group, f scan.Framework) []Obligation {
+	byRef := map[string]*Obligation{}
+	var order []string
+
+	for _, g := range groups {
+		for _, c := range scan.ControlsFor(g.ID, f) {
+			o, ok := byRef[c.Ref]
+			if !ok {
+				o = &Obligation{Ref: c.Ref, Name: c.Name}
+				byRef[c.Ref] = o
+				order = append(order, c.Ref)
+			}
+			o.Findings = append(o.Findings, g.ID)
+			o.Count += len(g.Resources)
+		}
+	}
+
+	sort.Strings(order)
+	out := make([]Obligation, 0, len(order))
+	for _, ref := range order {
+		out = append(out, *byRef[ref])
+	}
+	return out
 }
 
 func rank(r scan.Risk) int {

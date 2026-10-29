@@ -23,6 +23,11 @@ type Finding struct {
 	Detail   string `json:"detail"`
 	Why      string `json:"why"`
 	Next     string `json:"next"`
+
+	// Controls are the regulatory obligations this finding is evidence about.
+	// They travel with the finding in JSON so a pipeline can group by article
+	// without needing stathe's catalogue.
+	Controls []Control `json:"controls,omitempty"`
 }
 
 func (f Finding) String() string {

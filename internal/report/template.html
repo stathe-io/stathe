@@ -183,8 +183,62 @@
   </table>
 </section>
 
+{{if .Framework}}
+<section>
+  <h2>3. Regulatory mapping</h2>
+  <p>
+    The findings above are grouped here by obligation, so this section can be
+    filed as evidence about the configuration of {{.Meta.Environment}}. It maps
+    to <b>{{.FrameworkName}}</b>.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th style="width:26mm">Reference</th><th>Obligation</th><th>Findings</th><th style="width:20mm">Affected</th></tr>
+    </thead>
+    <tbody>
+      {{range .Obligations}}
+      <tr>
+        <td class="id">{{.Ref}}</td>
+        <td>{{.Name}}</td>
+        <td class="id">{{range $i, $f := .Findings}}{{if $i}}, {{end}}{{$f}}{{end}}</td>
+        <td>{{.Count}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  {{if .NIS2Gaps}}
+  <h3>What this assessment does not cover</h3>
+  <p>
+    stathe reads the technical configuration of one cluster. The measures below
+    are organisational: procedures, contracts, records and training. Nothing in
+    this report is evidence about them, and they need to be demonstrated
+    separately.
+  </p>
+  <table>
+    <thead>
+      <tr><th style="width:26mm">Reference</th><th>Not covered by this assessment</th></tr>
+    </thead>
+    <tbody>
+      {{range .NIS2Gaps}}
+      <tr><td class="id">{{.Ref}}</td><td>{{.Name}}</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+
+  <div class="callout">
+    <b>This is not an attestation.</b>
+    This report states what the configuration of {{.Meta.Environment}} was on
+    {{.Meta.Date}}. It does not certify compliance, and it is not issued by a
+    conformity assessment body. Weigh it alongside your other evidence.
+  </div>
+</section>
+{{end}}
+
 <section class="break">
-  <h2>3. Findings in detail</h2>
+  <h2>{{if .Framework}}4{{else}}3{{end}}. Findings in detail</h2>
   {{range .Groups}}
   <div class="finding">
     <header>
