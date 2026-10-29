@@ -66,7 +66,13 @@ func CheckNetworkPolicies(rs []Resource) []Finding {
 	return out
 }
 
-// CheckClusterAdmin reports subjects bound to cluster-admin.
+// CheckClusterAdmin reports subjects bound to cluster-admin, excluding the
+// bindings every cluster is born with.
+//
+// Reporting system:masters or the distribution's own controllers is noise: it
+// is true of every cluster, the team cannot remove it, and a report that opens
+// with it reads as though the tool does not know what it is looking at. What is
+// worth reporting is the binding somebody added.
 func CheckClusterAdmin(rs []Resource) []Finding {
 	var out []Finding
 	for _, r := range rs {
@@ -74,6 +80,9 @@ func CheckClusterAdmin(rs []Resource) []Finding {
 			continue
 		}
 		for _, s := range r.Subjects {
+			if isPlatformSubject(s) {
+				continue
+			}
 			name := s["name"]
 			if ns := s["namespace"]; ns != "" {
 				name = ns + "/" + name
@@ -83,6 +92,18 @@ func CheckClusterAdmin(rs []Resource) []Finding {
 		}
 	}
 	return out
+}
+
+// isPlatformSubject reports whether a subject belongs to Kubernetes itself or
+// to the distribution, rather than to the team being assessed.
+func isPlatformSubject(s map[string]string) bool {
+	if strings.HasPrefix(s["name"], "system:") {
+		return true
+	}
+	if skipNamespaces[s["namespace"]] {
+		return true
+	}
+	return false
 }
 
 // CheckPlainCredentials reports ConfigMaps holding something that looks like a

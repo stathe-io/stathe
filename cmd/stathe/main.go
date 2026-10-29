@@ -14,11 +14,15 @@ import (
 const usage = `stathe — Kubernetes security assessment
 
 Usage:
-  stathe check --manifests <dir>   Assess manifests on disk, no cluster needed
+  stathe check --manifests DIR    Assess manifests on disk, no cluster needed
+  stathe check --context NAME     Assess a live cluster (read-only)
+  stathe check                    Assess the current kubectl context
   stathe version
 
 Flags:
   --json    Emit findings as JSON instead of a table
+
+stathe only ever reads. It never writes to a cluster.
 `
 
 func main() {
@@ -43,19 +47,41 @@ func main() {
 func runCheck(args []string) int {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
 	manifests := fs.String("manifests", "", "directory of manifests to assess")
+	kubeContext := fs.String("context", "", "kubectl context to assess")
 	asJSON := fs.Bool("json", false, "emit findings as JSON")
 	fs.Parse(args)
 
-	if *manifests == "" {
-		fmt.Fprintln(os.Stderr, "stathe check needs --manifests <dir>")
-		fmt.Fprintln(os.Stderr, "(assessing a live cluster is not implemented yet)")
+	if *manifests != "" && *kubeContext != "" {
+		fmt.Fprintln(os.Stderr, "use either --manifests or --context, not both")
 		return 2
 	}
 
-	resources, err := scan.LoadDir(*manifests)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "could not read manifests: %v\n", err)
-		return 1
+	var (
+		resources []scan.Resource
+		source    string
+		err       error
+	)
+
+	if *manifests != "" {
+		source = *manifests
+		resources, err = scan.LoadDir(*manifests)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could not read manifests: %v\n", err)
+			return 1
+		}
+	} else {
+		source = *kubeContext
+		if source == "" {
+			source = "the current context"
+		}
+		if !*asJSON {
+			fmt.Printf("Reading %s...\n", source)
+		}
+		resources, err = scan.LoadCluster(*kubeContext)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could not read the cluster: %v\n", err)
+			return 1
+		}
 	}
 
 	findings := scan.Run(resources)
@@ -70,7 +96,7 @@ func runCheck(args []string) int {
 		return 0
 	}
 
-	fmt.Printf("Assessed %d resources in %s\n\n", len(resources), *manifests)
+	fmt.Printf("Assessed %d resources in %s\n\n", len(resources), source)
 	if len(findings) == 0 {
 		fmt.Println("No findings. That is unusual; check that the path is right.")
 		return 0
