@@ -81,16 +81,12 @@ adds.
 A fully patched image, in a flat network, with a service account bound to
 `cluster-admin`, is still one bad afternoon. These six are about configuration
 rather than about a CVE count, and "reachable according to the configuration"
-is the strongest claim stathe makes — a test against the running system is a
-different exercise and a different tool.
+is the strongest claim stathe makes.
 
 A scan that returns everything returns nothing actionable. Someone still has to
-decide which twenty of the four hundred matter. stathe ships that decision
-instead of the raw list: the platform's own namespaces and the control plane's
-own bindings are filtered out before the checks run.
-
-Every one of those exclusions is printed, under `NOT ASSESSED`, with a count
-and a reason:
+decide which twenty of the four hundred matter. stathe ships that decision —
+and prints what the decision cost, because a filter you cannot see and a clean
+cluster look identical:
 
 ```console
 2 findings: 1 high, 1 medium, 0 low
@@ -100,17 +96,11 @@ NOT ASSESSED (1, filtered before the checks ran)
       Kubernetes or the distribution binds this identity itself; the team cannot remove it
 ```
 
-A filter you cannot see is worse than no filter: a clean result and a quiet
-tool look identical. With `--json` the same exclusions are a `not_assessed`
-section of the document, so a pipeline cannot drop them either.
-
-A third section, `NOTED`, is for what stathe can see but cannot judge. If the
-cluster has a `ValidatingAdmissionPolicy` that mentions images, that is said
-plainly — and the SC-07 findings stay exactly as they were, at the same risk.
-stathe does not read CEL, Kyverno's language or Rego, so it does not get to
-decide that something else already handles a finding. Deciding that is your
-job, and recording the decision is what [`.stathe.yaml`](docs/accepted-risk.md)
-is for.
+A third section, `NOTED`, is for what stathe can see but cannot judge: a
+`ValidatingAdmissionPolicy` mentioning images is said plainly, and the SC-07
+findings stay exactly as they were. stathe reads neither CEL nor Rego, so it
+does not get to decide that something else already handles a finding. That
+decision is yours, and [`.stathe.yaml`](docs/accepted-risk.md) is where it goes.
 
 ---
 
@@ -188,43 +178,23 @@ them, are in [SECURITY.md](SECURITY.md).
 ### 1. Approve the access
 
 Hand [`cluster/readonly-rbac.yaml`](cluster/readonly-rbac.yaml) to whoever owns
-the cluster before anything runs. It is the whole permission set: ten resource
-types, one verb. One of them, `validatingadmissionpolicies`, is optional —
-without it stathe simply cannot tell you that an admission policy may already
-enforce what a finding asks for.
-
-`pods` is in there for the pods no controller created. A CI system that starts
-a build pod per job is often running the most privileged workload on the
-cluster, and it belongs to no Deployment. Pods a listed controller created are
-dropped the moment they are parsed: they are that controller's pod template
-with a generated name. There is no `log` and no `exec` anywhere in the file.
+the cluster before anything runs. It is the whole permission set — ten resource
+types, one verb — and it is commented for the person who has to approve it. No
+`get`, no `watch`, no `log`, no `exec`, and no access to Secrets at all.
 
 ```sh
 kubectl apply -f cluster/readonly-rbac.yaml
-```
 
-Two claims in that file are worth verifying rather than believing:
-
-```sh
-# what it grants
+# verify rather than believe it
 kubectl auth can-i --list --as=system:serviceaccount:stathe:stathe
-
-# what it does not
-kubectl auth can-i get secrets      --as=system:serviceaccount:stathe:stathe   # no
-kubectl auth can-i create pods      --as=system:serviceaccount:stathe:stathe   # no
-kubectl auth can-i delete deployments --as=system:serviceaccount:stathe:stathe # no
+kubectl auth can-i get secrets --as=system:serviceaccount:stathe:stathe   # no
 ```
 
-There is no `get` and no `watch`, because the code does not call them. Secrets
-are absent on purpose: stathe has no permission to read them at all.
-
-ConfigMaps are the one place to be precise. Kubernetes cannot list only the key
-names, so the API server returns each ConfigMap in full, values included, and
-that response reaches the machine running stathe. The code keeps the key names
-and discards the values the moment each object is parsed: they are never
-stored, logged, written to a report or sent anywhere. The code that does this
-is a few lines in `internal/scan/cluster.go`, short enough for a security
-officer to read before approving the run.
+ConfigMaps are the one place to be precise: Kubernetes cannot list key names
+alone, so each ConfigMap arrives in full and the values reach the machine
+running stathe. The code keeps the keys and discards the values as each object
+is parsed — a few lines in `internal/scan/cluster.go`, short enough to read
+before approving the run.
 
 ### 2. Confirm it will work
 
@@ -273,7 +243,7 @@ stathe check --manifests ./k8s
 | `--context NAME` | Assess a live cluster. Omit to use the current kubectl context |
 | `--manifests DIR` | Assess files on disk, with no cluster at all |
 | `--summary` | One line per check instead of one per finding |
-| `--json` | Emit the assessment as a JSON document (see below) |
+| `--json` | Emit the assessment as a [JSON document](docs/evidence.md) |
 | `--framework NAME` | Annotate each finding with the obligation it evidences |
 | `--fail-on LEVEL` | Exit 1 when a finding at this severity or above remains |
 | `--exceptions DIR` | Where to look for `.stathe.yaml` |
@@ -282,156 +252,50 @@ stathe check --manifests ./k8s
 #### `--summary`
 
 One line per check, and under it what the findings have in common — only when
-grouping actually reduces the problem:
-
-```console
-$ stathe check --manifests cluster/northwind --summary
-Assessed 17 resources in cluster/northwind
-
-SC-01   high      3  No network separation between workloads
-SC-04   high      1  Credentials stored in plain configuration
-SC-05   high      6  Container runs with excessive privileges
-                  3× northwind-tracking/deployment/tracking
-                  1× northwind-orders/deployment/orders
-                  1× northwind-orders/deployment/postgres
-                     and 1 more
-SC-06   high      2  Cluster-admin granted outside the platform's own bindings
-SC-07   high      4  Workload uses a mutable image tag
-
-20 findings: 9 high, 7 medium, 4 low
-```
-
-For SC-07 that grouping is by image, not by workload: eighteen findings from
-three charts are three decisions, and the fix is per image. The summary ends
-with the commands that follow it, because a view that deliberately withholds
-the detail has to say where the detail is.
+grouping actually reduces the problem. For SC-07 that grouping is by image, not
+by workload: eighteen findings from three charts are three decisions. It ends
+with the commands that follow it.
 
 #### `--platform-namespaces`
 
-A real cluster runs a GitOps controller, a policy engine and a
-runtime-security agent, and those are not the team's findings. stathe only
-knows the `kube-*` namespaces by default, so name the rest:
+A real cluster runs a GitOps controller, a policy engine and a runtime-security
+agent, and those are not the team's findings. stathe only knows the `kube-*`
+namespaces by default, so name the rest:
 
 ```sh
-stathe check --context production --platform-namespaces fleet-system,cattle-system,kyverno,falco
+stathe check --context production --platform-namespaces fleet-system,kyverno,falco
 ```
 
-Their resources are left out of the checks, counted, and listed under
-`NOT ASSESSED` with the reason that you declared them — distinct from the
-reason given for the namespaces every cluster has. The set ends up in the JSON
-document too, because which namespaces an assessment held out of scope is part
-of what it did, and two assessments are only comparable if that is recorded
-rather than remembered.
-
-This is a statement about **scope**. A statement about **risk** — a privileged
-agent that has to be privileged — belongs in
-[`.stathe.yaml`](docs/accepted-risk.md) instead.
+Their resources are left out, counted, listed under `NOT ASSESSED` with the
+reason that you declared them, and recorded in the document. This is a statement
+about **scope**; a statement about **risk** belongs in
+[`.stathe.yaml`](docs/accepted-risk.md).
 
 ### `stathe diff`
 
 The retest. "We fixed it" is a claim; a diff against the assessment that found
-it is evidence.
-
-```sh
-stathe check --context production --json > 2026-q3.json
-# ... the client does the work, a quarter passes ...
-stathe check --context production --json > 2026-q4.json
-
-stathe diff 2026-q3.json 2026-q4.json
-```
-
-```console
-Before   2026-07-02 09:15 CEST  production  stathe v0.3.1  70 resources, 20 findings
-After    2026-10-01 09:02 CEST  production  stathe v0.3.1  71 resources, 18 findings
-
-FIXED (2)
-  SC-06   high     clusterrolebinding/ci-runner-admin   grants cluster-admin to serviceaccount orders/ci-runner
-  SC-07   high     web/deployment/web                   image "nginx:latest" uses a floating tag that can change under you
-
-2 fixed, 0 new, 18 unchanged
-```
-
-| Flag | Meaning |
-|---|---|
-| `--fail-on-new` | Exit 1 when the later assessment has findings the earlier one did not |
-
-Three things it will not do:
-
-- **Count an accepted risk as fixed.** A finding that moved into `.stathe.yaml`
-  appears under `ACCEPTED SINCE`, never under `FIXED`. It is the most
-  flattering lie this tool could tell, so it is a test rather than an
-  intention.
-- **Hide that the tool changed.** If the two assessments came from different
-  versions of stathe, the diff says so before the counts: a new finding can
-  also be a check that did not exist before.
-- **Treat an old file as equivalent.** A findings file from before the document
-  format records neither its date nor what it was pointed at, and the diff and
-  the report cover both say so instead of letting your report date stand in for
-  the assessment date.
-
-Findings are matched on ID, resource **and** detail. One deployment can hold
-two SC-05 findings, and treating them as one would hide the one that is left
-after the other is fixed.
-
-### The JSON document
-
-`check --json` emits one object, not a bare array:
-
-```json
-{
-  "schema_version": 2,
-  "stathe_version": "v0.3.1",
-  "assessed_at": "2026-10-30T08:21:59Z",
-  "source": "production",
-  "resources_checked": 70,
-  "findings": [ ... ],
-  "accepted": [ ... ],
-  "lapsed": [ ... ],
-  "not_assessed": [ ... ]
-}
-```
-
-Everything a reader needs before treating the file as evidence rather than as
-output: which version looked at what, when, what was accepted and why, and what
-was filtered out before the checks ran.
-
-The findings are in a total order — risk, ID, resource, detail — so two
-assessments of an unchanged cluster produce the same document and every line a
-diff shows is a line that changed in the cluster. Only `assessed_at` moves
-between two identical runs.
-
-Version 1 was that bare array. `report` and `diff` still read it, and both say
-on sight that it carries no record of the run behind it.
+it is evidence — and it never counts a risk that moved into `.stathe.yaml` as a
+fix. [docs/evidence.md](docs/evidence.md) has the output, `--fail-on-new`, and
+the JSON document both sides are read from.
 
 ### `stathe report`
 
 ```sh
-stathe check --context production --json > findings.json
 stathe report --findings findings.json \
-  --client "Acme B.V." \
-  --author "Your Name" \
-  --email "you@example.com" \
-  --environment "production" \
-  --framework nis2 \
-  --out report.html
+  --client "Acme B.V." --author "Your Name" --email "you@example.com" \
+  --environment "production" --framework nis2 --out report.html
 ```
 
-`--client`, `--author` and `--email` have no defaults and are all required: a
-report is signed by whoever produced it, and a client who finds someone else's
-contact details on their assessment has every reason to distrust the rest of it.
+A cover, a severity summary, one card per finding with its affected resources,
+and — with `--framework` — a section grouping findings by article. The cover
+names the version of stathe and the assessment it was rendered from.
 
-Produces a document with a cover, a severity summary, one card per finding with
-its affected resources, and — with `--framework` — a section grouping findings
-by article. The cover records which version of stathe produced it and which
-assessment it was rendered from, so two assessments months apart are
-comparable.
+`--client`, `--author` and `--email` are required and have no defaults: a client
+who finds someone else's contact details on their assessment has every reason to
+distrust the rest of it.
 
-For a PDF:
-
-```sh
-google-chrome --headless=new --no-pdf-header-footer \
-  --print-to-pdf=report.pdf report.html
-```
+For a PDF: `google-chrome --headless=new --no-pdf-header-footer
+--print-to-pdf=report.pdf report.html`.
 
 ### `stathe baseline`
 
@@ -507,44 +371,14 @@ stathe:
 
 ## Accepted risk
 
-`.stathe.yaml`, next to the manifests or in the working directory, records what
-a team has decided to live with.
+Some findings are true and are going to stay: a runtime-security agent has to
+mount the host filesystem. `.stathe.yaml` records that decision — the finding
+stays in the report, under its own heading, with a reason and an expiry date,
+and comes back by itself when the date passes. An entry without both is
+refused.
 
-```yaml
-exceptions:
-  - id: SC-09
-    resource: "payments/*"       # exact resource, a prefix, or "*"
-    reason: "LimitRange on the namespace sets a default memory limit"
-    expires: 2027-03-01
-```
-
-Worked examples for the cases that actually come up -- a runtime-security
-agent, a CNI, a chart that cannot pin a digest -- are in
-[docs/accepted-risk.md](docs/accepted-risk.md).
-
-Three rules make this a register rather than a mute button.
-
-**A reason is required.** An entry without one is refused, not honoured. An
-undocumented suppression is how a risk stops existing on paper while still
-existing in the cluster. Write the sentence you would say to an auditor.
-
-**An expiry is required.** Accepted risk is a decision taken in a context, and
-contexts change. Pick a date by which someone will look again.
-
-**Accepted findings are still counted and printed.** A run reporting 17 when it
-suppressed 2 is the lie an auditor catches.
-
-```console
-18 findings: 9 high, 7 medium, 2 low
-
-2 accepted in .stathe.yaml:
-  SC-09   payments/deployment/api    LimitRange sets a default (until 2027-03-01)
-  SC-09   payments/deployment/worker LimitRange sets a default (until 2027-03-01)
-```
-
-When an expiry passes, the finding comes back carrying the reason it was
-accepted and the date that ran out, so a build turning red arrives with an
-explanation rather than a mystery.
+[docs/accepted-risk.md](docs/accepted-risk.md) has the file format and the
+cases that actually come up.
 
 ---
 
@@ -560,7 +394,7 @@ written.
 | `SC-01` | Network separation | Namespaces with no NetworkPolicy, where any pod reaches any other pod | high |
 | `SC-04` | Plaintext credentials | ConfigMap keys that *end* in a credential word (`DB_PASSWORD`, `client-secret`, `STRIPE_API_KEY`), never ones that merely contain it (`SECRET_SCANNER_ENABLED` is a feature flag) | high |
 | `SC-05` | Workload privilege | Privileged containers, missing `securityContext`, and host mounts ranked by what they are worth: a container runtime socket or the kubelet's credentials are control of the node, `/proc` is not | high / medium |
-| `SC-06` | Cluster-admin bindings | Any subject bound to `cluster-admin` — service accounts, users, and the aggregate groups such as `system:authenticated` — excluding the control plane's own identities, which are listed under `NOT ASSESSED` | high |
+| `SC-06` | Cluster-admin bindings | Any subject granted full control — service accounts, users, and aggregate groups such as `system:authenticated` — whether through `cluster-admin` itself or a ClusterRole that wildcards every verb, resource and API group under another name. The control plane's own identities are excluded and listed under `NOT ASSESSED` | high |
 | `SC-07` | Image provenance | Floating tags like `:latest` (high), and tags that are not digests (medium) | high / medium |
 | `SC-09` | Resource limits | Containers with no memory limit, where one workload starves a node | low |
 
@@ -595,77 +429,36 @@ Every finding carries the obligation it is evidence about, under NIS2
 
 ```sh
 stathe check --context production --framework nis2
-stathe report --findings findings.json --client "Acme" --framework nis2 --out report.html
 stathe compliance
 ```
 
-`stathe compliance` prints coverage of NIS2 Article 21(2): six of the ten
-measures, **and the four it cannot evidence** — incident handling, assessing
+`stathe compliance` prints coverage of NIS2 Article 21(2) — six of the ten
+measures, **and the four it cannot evidence**: incident handling, assessing
 effectiveness, cyber hygiene and training, and multi-factor authentication.
-Those are organisational. No cluster scanner can produce evidence for them, and
-a coverage number that hides them is worth less than one that does not.
-
-stathe does not certify, attest or determine compliance, and the report says so
-on its own face.
+Those are organisational, and a coverage number that hides them is worth less
+than one that does not. stathe does not certify, attest or determine
+compliance, and the report says so on its own face.
 
 ---
 
 ## The demo cluster
 
-A k3d cluster running "Northwind Logistics", four services across three
-namespaces with seven deliberate weaknesses. It exists so the tool can be
-tested and demonstrated without borrowing anyone's production.
+"Northwind Logistics": four services across three namespaces with seven
+deliberate weaknesses, so the tool can be demonstrated without borrowing
+anyone's production. **Do not apply these manifests to a cluster you care
+about.**
 
 ```sh
 make up        # k3d cluster with Traefik, plus the demo app
 make findings  # what stathe makes of it
-make down      # remove it
+make down
 ```
 
-**Do not apply these manifests to a cluster you care about.**
+[`cluster/attack.md`](cluster/attack.md) proves each weakness by hand — reach
+the database from the web pod, read the password out of a ConfigMap, escape the
+privileged container — then applies the baseline and closes them.
 
-[`cluster/attack.md`](cluster/attack.md) walks through proving the weaknesses
-by hand: reach the database from the web pod, read the password out of a
-ConfigMap, escape the privileged container. Then apply the baseline and watch
-each one close.
-
----
-
-## Development
-
-```sh
-make test              # go test ./...
-make validate          # assess the demo manifests without a cluster
-go vet ./...
-```
-
-The tests are the interesting part of this repository. Several of them exist
-because a check once passed for the wrong reason:
-
-- `TestNorthwindFindings` matches on the detail text rather than the finding
-  ID, because an earlier version stayed green when a privileged container was
-  set to `privileged: false`.
-- `TestWarnHalfNeverEnforces` rejects a Pod Security `enforce` label anywhere
-  in `warn/`, including inside a YAML comment. It caught one.
-- `TestNIS2RefsAreReal` rejects any citation that is not a real measure in
-  Article 21(2), so a typo cannot reach a client report.
-- `TestExpiredExceptionStopsSuppressing` pins that a lapsed acceptance puts the
-  finding back and says which acceptance ran out.
-
-A check is finished when it has been watched failing for the right reason, not
-when it passes.
-
----
-
-## Layout
-
-| Directory | Contents |
-|---|---|
-| `cmd/stathe/` | The CLI |
-| `internal/scan/` | Checks, the finding catalogue, the regulatory mapping, exceptions |
-| `internal/report/` | Report generation and its template |
-| `internal/baseline/` | The generated fix |
-| `cluster/` | The demo cluster, the RBAC manifest, the walkthrough |
+Working on stathe itself: [docs/development.md](docs/development.md).
 
 ---
 
@@ -673,6 +466,5 @@ when it passes.
 
 Apache 2.0. See [LICENSE](LICENSE).
 
-Built by [Jarno Kristelijn](https://www.linkedin.com/in/jarnokristelijn/),
-DevSecOps engineer in the Netherlands. A finding it gets wrong is worth more to
-me than one it gets right — [open an issue](https://github.com/stathe-io/stathe/issues).
+A finding it gets wrong is worth more than one it gets right —
+[open an issue](https://github.com/stathe-io/stathe/issues).

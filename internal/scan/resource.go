@@ -23,7 +23,41 @@ type Resource struct {
 	RoleRef    map[string]string      `yaml:"roleRef"`
 	Subjects   []map[string]string    `yaml:"subjects"`
 
+	// Rules are a (Cluster)Role's permissions. SC-06 reads them because the
+	// name of a role says nothing about what it grants: a ClusterRole with
+	// wildcards everywhere is cluster-admin whatever it is called.
+	Rules []PolicyRule `yaml:"rules"`
+
 	Source string `yaml:"-"`
+}
+
+// PolicyRule is one rule from a (Cluster)Role, with the fields that decide how
+// much it grants. NonResourceURLs is deliberately absent: it covers endpoints
+// like /healthz, and no combination of them is control of the cluster.
+type PolicyRule struct {
+	APIGroups []string `yaml:"apiGroups"`
+	Resources []string `yaml:"resources"`
+	Verbs     []string `yaml:"verbs"`
+}
+
+// GrantsEverything reports whether a rule allows every action on every
+// resource in every API group.
+//
+// All three have to be wildcarded on the same rule. "Read everything" plus
+// "do anything to Jobs" is two useful-but-bounded rules, and a check that
+// ORed the fields together would call that combination cluster-admin -- which
+// is the kind of false positive that teaches a reader to skip the check.
+func (r PolicyRule) GrantsEverything() bool {
+	return hasWildcard(r.APIGroups) && hasWildcard(r.Resources) && hasWildcard(r.Verbs)
+}
+
+func hasWildcard(xs []string) bool {
+	for _, x := range xs {
+		if strings.TrimSpace(x) == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 type Metadata struct {

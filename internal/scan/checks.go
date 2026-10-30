@@ -81,12 +81,54 @@ func CheckNetworkPolicies(rs []Resource) []Finding {
 // at medium: usually it is the distribution's own, but nothing stops somebody
 // from adding one there, and an assessment that drops it has a blind spot in
 // exactly the place an attacker would pick.
-func CheckClusterAdmin(rs []Resource) []Finding {
-	var out []Finding
+// unlimitedClusterRoles names the ClusterRoles that grant everything, so a
+// binding can be judged on what the role permits rather than on what it is
+// called.
+//
+// Only roles present in what was assessed are listed. A binding pointing at a
+// role stathe never saw is left alone: calling it safe would hide a real one,
+// and calling it cluster-admin would invent a finding about a role the reader
+// cannot look up. Either way the honest answer is that it was not assessed.
+func unlimitedClusterRoles(rs []Resource) map[string]bool {
+	out := map[string]bool{}
 	for _, r := range rs {
-		if r.Kind != "ClusterRoleBinding" || r.RoleRef["name"] != "cluster-admin" {
+		if r.Kind != "ClusterRole" {
 			continue
 		}
+		for _, rule := range r.Rules {
+			if rule.GrantsEverything() {
+				out[r.Metadata.Name] = true
+				break
+			}
+		}
+	}
+	return out
+}
+
+func CheckClusterAdmin(rs []Resource) []Finding {
+	unlimited := unlimitedClusterRoles(rs)
+
+	var out []Finding
+	for _, r := range rs {
+		if r.Kind != "ClusterRoleBinding" {
+			continue
+		}
+
+		role := r.RoleRef["name"]
+		// What the binding grants, in the words the finding will use. A role
+		// nobody recognises has to be explained, or the finding reads as a
+		// false positive about ordinary platform plumbing and gets closed. The
+		// explanation goes at the end of the sentence rather than next to the
+		// role name, so the subject is not pushed behind a relative clause.
+		granted, explain := "cluster-admin", ""
+		if role != "cluster-admin" {
+			if !unlimited[role] {
+				continue
+			}
+			granted = "clusterrole " + role
+			explain = ", and that role permits every action on every resource in every API group"
+		}
+
 		for _, s := range r.Subjects {
 			if isPlatformSubject(s) {
 				continue
@@ -98,7 +140,7 @@ func CheckClusterAdmin(rs []Resource) []Finding {
 				name = ns + "/" + name
 			}
 
-			detail := fmt.Sprintf("grants cluster-admin to %s %s", kind, name)
+			detail := fmt.Sprintf("grants %s to %s %s", granted, kind, name)
 			risk := High
 
 			if ns, ok := platformNamespaceOf(s); ok {
@@ -108,6 +150,9 @@ func CheckClusterAdmin(rs []Resource) []Finding {
 			if group, ok := everySubjectGroup(s); ok {
 				detail += ", which is " + group
 			}
+			// Last, so the clauses about the subject stay next to the subject
+			// and "that role" cannot be read as referring to the group.
+			detail += explain
 
 			out = append(out, finding("SC-06", r.Ref(), detail, risk))
 		}
