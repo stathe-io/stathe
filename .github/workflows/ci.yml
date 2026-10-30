@@ -17,15 +17,46 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      # TODO(hardening): pin every `uses:` below to a full commit SHA
-      # (`pinact run` does it in one go). Tags can be moved; SHAs cannot.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: go.mod
+          # The newest patch of the language version, not the floor in go.mod.
+          # `go-version-file: go.mod` installs that floor exactly, and a Go
+          # 1.26.0 standard library has 34 vulnerabilities govulncheck reports
+          # and this build would otherwise ship. setup-go sets GOTOOLCHAIN=local,
+          # so go.mod's own toolchain directive cannot correct it here.
+          #
+          # Raise this together with the `go` line in go.mod and the Dockerfile
+          # base image; `make vuln` is the check that catches it when they drift.
+          go-version: "1.26.x"
+          check-latest: true
+
+      - name: Everything this build trusts is pinned
+        run: |
+          # A tag can be moved underneath a build; a commit SHA and a digest
+          # cannot. stathe's own SC-07 says this about every image it finds, so
+          # the pipeline has to hold itself to it -- and a dependency bump has
+          # already replaced two SHA pins with plain tags once, which is
+          # exactly the drift a comment in the file cannot catch.
+          unpinned=$(grep -rnE '^[[:space:]]*(- )?uses:' .github/workflows/ \
+            | grep -vE '@[0-9a-f]{40}' || true)
+          if [ -n "$unpinned" ]; then
+            echo "These actions are not pinned to a commit SHA:"
+            echo "$unpinned"
+            echo "Fix with: go run github.com/suzuki-shunsuke/pinact/cmd/pinact@latest run"
+            exit 1
+          fi
+
+          unpinned=$(grep -nE '^FROM ' Dockerfile | grep -v '@sha256:' || true)
+          if [ -n "$unpinned" ]; then
+            echo "These base images are not pinned to a digest:"
+            echo "$unpinned"
+            echo "Fix with: docker buildx imagetools inspect <image>:<tag> | grep '^Digest:'"
+            exit 1
+          fi
 
       - name: Modules match go.sum
         run: go mod verify
@@ -50,7 +81,7 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       # The Dockerfile runs the binary against the demo manifests as a build

@@ -4,10 +4,15 @@
 # manager or utilities. That is partly hardening and partly an argument: a
 # client's security officer can see exactly what would run in their cluster.
 
-# TODO(hardening): pin both base images by digest (FROM image:tag@sha256:...).
-# A tag can be moved underneath a build; a digest cannot. Dependabot keeps
-# digest pins current once they are in place.
-FROM golang:1.27-alpine AS build
+# Both base images are pinned by digest. A tag can be moved underneath a build;
+# a digest cannot, and stathe's own SC-07 check says exactly this about every
+# image it finds -- a tool that flags floating tags while building on one is not
+# worth listening to. Dependabot keeps these current.
+#
+# Each digest is the image index, not one platform's manifest, so the
+# linux/amd64 and linux/arm64 builds both resolve from it. Replace a pin with:
+#   docker buildx imagetools inspect <image>:<tag> | grep '^Digest:'
+FROM golang:1.27-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
 
 WORKDIR /src
 
@@ -27,7 +32,7 @@ RUN CGO_ENABLED=0 go build \
 # Prove the binary works before it is shipped.
 RUN /out/stathe version && /out/stathe check --manifests cluster/northwind >/dev/null
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 
 ARG VERSION=dev
 ARG REVISION=unknown

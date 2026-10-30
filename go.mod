@@ -1,5 +1,11 @@
 module github.com/stathe-io/stathe
 
+// The minimum the dependencies require, which `go mod tidy` rewrites to this
+// exact patch and will not leave as plain 1.26. It is a floor, not the version
+// anything should be built with: the workflows ask for 1.26.x so a release is
+// built on the newest patch. Using this file as the CI version is what put a
+// Go 1.26.0 standard library, with 34 known vulnerabilities, behind a passing
+// build.
 go 1.26.0
 
 require (
