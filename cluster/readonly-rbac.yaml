@@ -18,9 +18,10 @@
 #   kubectl auth can-i get secrets --as=system:serviceaccount:stathe:stathe
 #   kubectl auth can-i delete deployments --as=system:serviceaccount:stathe:stathe
 #
-# all print "no". Secrets are absent on purpose: stathe reads ConfigMap *key
-# names* to spot credentials stored in the clear, and never reads a value of
-# any kind. Secret material never enters the process.
+# all print "no". Secrets are absent on purpose: stathe has no permission to
+# read them. ConfigMaps are different: the API cannot list key names alone, so
+# the response carries the values too. stathe keeps the key names and discards
+# the values as each object is parsed; they are never stored or written out.
 #
 # Apply:   kubectl apply -f cluster/readonly-rbac.yaml
 # Remove:  kubectl delete -f cluster/readonly-rbac.yaml
@@ -53,7 +54,8 @@ rules:
     resources: ["deployments", "statefulsets", "daemonsets"]
     verbs: ["list"]
 
-  # ConfigMaps: key names only, to spot credentials kept outside a Secret.
+  # ConfigMaps: only the key names are kept, to spot credentials kept outside a
+  # Secret. Values arrive in the list response and are discarded on parse.
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["list"]

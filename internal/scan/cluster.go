@@ -30,6 +30,9 @@ var wanted = []struct {
 // skipNamespaces leaves the platform's own components out of the assessment.
 // They belong to the distribution rather than to the team being assessed, and
 // reporting on them buries the findings the team can actually act on.
+//
+// Skipping is counted, never silent: see Inventory.Skipped. A filter the reader
+// cannot see is indistinguishable from a cluster that has nothing wrong with it.
 var skipNamespaces = map[string]bool{
 	"kube-system":        true,
 	"kube-public":        true,
@@ -40,7 +43,10 @@ var skipNamespaces = map[string]bool{
 // LoadCluster reads configuration from a live cluster. It only ever lists and
 // gets; nothing here writes. Pass an empty context name to use the current one
 // from the kubeconfig.
-func LoadCluster(ctxName string) ([]Resource, error) {
+//
+// The returned Inventory carries both what will be assessed and what was
+// skipped, because the caller has to be able to print the second half.
+func LoadCluster(ctxName string) (*Inventory, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	overrides := &clientcmd.ConfigOverrides{}
 	if ctxName != "" {
@@ -58,7 +64,7 @@ func LoadCluster(ctxName string) ([]Resource, error) {
 	}
 
 	ctx := context.Background()
-	var out []Resource
+	inv := &Inventory{}
 
 	for _, w := range wanted {
 		list, err := client.Resource(w.gvr).List(ctx, metav1.ListOptions{})
@@ -70,18 +76,16 @@ func LoadCluster(ctxName string) ([]Resource, error) {
 		}
 
 		for _, item := range list.Items {
-			ns := item.GetNamespace()
-			if skipNamespaces[ns] {
-				continue
-			}
-			out = append(out, fromUnstructured(item.Object, w.kind, item.GetName(), ns))
+			// Add applies the namespace filter and counts what it drops; the
+			// filter lives there so nothing can be left out uncounted.
+			inv.Add(fromUnstructured(item.Object, w.kind, item.GetName(), item.GetNamespace()))
 		}
 	}
 
-	if len(out) == 0 {
+	if len(inv.Resources) == 0 {
 		return nil, fmt.Errorf("no resources read; check that the context is right and that you have read access")
 	}
-	return out, nil
+	return inv, nil
 }
 
 // fromUnstructured maps an API object onto the same Resource shape the manifest
@@ -104,8 +108,9 @@ func fromUnstructured(obj map[string]interface{}, kind, name, ns string) Resourc
 		r.Data = map[string]string{}
 		for k, v := range data {
 			// Only the key is needed to spot a credential. The value is
-			// deliberately not copied: the tool never carries secret material
-			// around, which keeps it honest when a client asks.
+			// deliberately not copied: the API returns it in the list response
+			// (there is no keys-only call), but it is dropped here and never
+			// stored, logged or reported. Keep the README wording in step.
 			_ = v
 			r.Data[k] = ""
 		}

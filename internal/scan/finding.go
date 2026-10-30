@@ -63,9 +63,14 @@ var Catalogue = map[string]struct {
 		Why:   "A privileged container that is broken into is effectively root on the node, not just inside the container.",
 		Next:  "Set runAsNonRoot, drop privileged, and add the capabilities the workload actually needs.",
 	},
+	// The wording covers users and groups as well as service accounts: a
+	// binding on an aggregate group such as system:authenticated grants the
+	// same thing to everyone at once. The meaning of SC-06 is unchanged --
+	// cluster-admin held by somebody who should not hold it -- so the ID still
+	// refers to what it always referred to.
 	"SC-06": {
-		Title: "Service account bound to cluster-admin",
-		Why:   "The token sits in every pod using that account. Whoever reaches one of those pods controls the whole cluster.",
+		Title: "Cluster-admin granted outside the platform's own bindings",
+		Why:   "Whoever holds that identity controls the whole cluster. For a service account the token sits in every pod using it; for a group, every member has it, and the aggregate groups cover every user or every workload there is.",
 		Next:  "Determine the permissions actually used, write a Role for exactly those, and remove the binding.",
 	},
 	"SC-07": {

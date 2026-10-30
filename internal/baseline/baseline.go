@@ -21,6 +21,7 @@ package baseline
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -81,6 +82,47 @@ func Generate(findings []scan.Finding, opt Options) []File {
 // namespacesNeedingPolicy reads the SC-01 findings rather than taking a list,
 // so the baseline can only ever cover ground the assessment actually walked.
 func namespacesNeedingPolicy(findings []scan.Finding) []string {
+	var out []string
+	for _, ns := range sc01Namespaces(findings) {
+		if ValidNamespace(ns) {
+			out = append(out, ns)
+		}
+	}
+	return out
+}
+
+// dnsLabel is what Kubernetes itself accepts as a namespace name.
+var dnsLabel = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+
+// ValidNamespace reports whether ns is a legal Kubernetes namespace name.
+//
+// It matters here and not only for tidiness: the name becomes part of a file
+// path and is written into YAML. A namespace read from a live cluster is
+// always valid, but one read from --manifests is whatever the file says. A
+// manifest declaring "../../../tmp/x" would otherwise place a file outside the
+// output directory, and one containing a newline would add lines to the YAML.
+func ValidNamespace(ns string) bool {
+	return dnsLabel.MatchString(ns)
+}
+
+// InvalidNamespaces returns the SC-01 namespaces that Generate refuses to write
+// files for. Callers should treat a non-empty result as an error rather than
+// let Generate drop them quietly, because a baseline that silently covers fewer
+// namespaces than the assessment found is the same understatement the loader
+// already refuses to commit.
+func InvalidNamespaces(findings []scan.Finding) []string {
+	var out []string
+	for _, ns := range sc01Namespaces(findings) {
+		if !ValidNamespace(ns) {
+			out = append(out, ns)
+		}
+	}
+	return out
+}
+
+// sc01Namespaces lists, sorted and without duplicates, the namespaces SC-01
+// names, valid or not.
+func sc01Namespaces(findings []scan.Finding) []string {
 	seen := map[string]bool{}
 	for _, f := range findings {
 		if f.ID != "SC-01" {

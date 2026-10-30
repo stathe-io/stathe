@@ -70,10 +70,17 @@ func CheckNetworkPolicies(rs []Resource) []Finding {
 // CheckClusterAdmin reports subjects bound to cluster-admin, excluding the
 // bindings every cluster is born with.
 //
-// Reporting system:masters or the distribution's own controllers is noise: it
-// is true of every cluster, the team cannot remove it, and a report that opens
-// with it reads as though the tool does not know what it is looking at. What is
-// worth reporting is the binding somebody added.
+// Reporting system:masters or the distribution's own control-plane identities
+// is noise: it is true of every cluster, the team cannot remove it, and a
+// report that opens with it reads as though the tool does not know what it is
+// looking at. Those identities are named in platformSubjects, and
+// PlatformSubjects lists the ones a given run left out, so the exclusion is
+// visible rather than silent.
+//
+// A ServiceAccount in a platform namespace is a different case and is reported
+// at medium: usually it is the distribution's own, but nothing stops somebody
+// from adding one there, and an assessment that drops it has a blind spot in
+// exactly the place an attacker would pick.
 func CheckClusterAdmin(rs []Resource) []Finding {
 	var out []Finding
 	for _, r := range rs {
@@ -84,27 +91,143 @@ func CheckClusterAdmin(rs []Resource) []Finding {
 			if isPlatformSubject(s) {
 				continue
 			}
+
+			kind := strings.ToLower(s["kind"])
 			name := s["name"]
 			if ns := s["namespace"]; ns != "" {
 				name = ns + "/" + name
 			}
-			out = append(out, finding("SC-06", r.Ref(),
-				fmt.Sprintf("grants cluster-admin to %s %s", strings.ToLower(s["kind"]), name), High))
+
+			detail := fmt.Sprintf("grants cluster-admin to %s %s", kind, name)
+			risk := High
+
+			if ns, ok := platformNamespaceOf(s); ok {
+				risk = Medium
+				detail += fmt.Sprintf(", in platform namespace %s; confirm it is the distribution's own and not something added", ns)
+			}
+			if group, ok := everySubjectGroup(s); ok {
+				detail += ", which is " + group
+			}
+
+			out = append(out, finding("SC-06", r.Ref(), detail, risk))
 		}
 	}
 	return out
 }
 
-// isPlatformSubject reports whether a subject belongs to Kubernetes itself or
-// to the distribution, rather than to the team being assessed.
+// everySubjectGroup spells out what the aggregate RBAC groups actually cover.
+// "grants cluster-admin to group system:serviceaccounts:build" is accurate and
+// still easy to read past; a reader who does not know the group by heart needs
+// to be told that it means every workload in that namespace.
+func everySubjectGroup(s map[string]string) (string, bool) {
+	name := s["name"]
+	switch name {
+	case "system:authenticated":
+		return "every user and workload that can authenticate to this cluster", true
+	case "system:unauthenticated", "system:anonymous":
+		return "anyone who can reach the API server, authenticated or not", true
+	case "system:serviceaccounts":
+		return "every service account in every namespace", true
+	}
+	if ns := strings.TrimPrefix(name, "system:serviceaccounts:"); ns != name && ns != "" {
+		return "every service account in namespace " + ns, true
+	}
+	return "", false
+}
+
+// platformNamespaceOf reports the platform namespace a single ServiceAccount
+// subject lives in, through either the namespace field or the user form of the
+// name. It is deliberately not part of isPlatformSubject: these are reported,
+// at a lower risk, rather than filtered.
+func platformNamespaceOf(s map[string]string) (string, bool) {
+	if ns := s["namespace"]; skipNamespaces[ns] {
+		return ns, true
+	}
+	if ns, ok := serviceAccountNamespace(s["name"]); ok && skipNamespaces[ns] {
+		return ns, true
+	}
+	return "", false
+}
+
+// PlatformSubjects names the cluster-admin subjects CheckClusterAdmin left out,
+// with the reason. A run that reports two findings while it suppressed three
+// bindings has to be able to say so: the count belongs next to the findings,
+// not in the tool's head.
+func PlatformSubjects(rs []Resource) []Suppressed {
+	var out []Suppressed
+	for _, r := range rs {
+		if r.Kind != "ClusterRoleBinding" || r.RoleRef["name"] != "cluster-admin" {
+			continue
+		}
+		for _, s := range r.Subjects {
+			if !isPlatformSubject(s) {
+				continue
+			}
+			out = append(out, Suppressed{
+				What:   fmt.Sprintf("%s grants cluster-admin to %s %s", r.Ref(), strings.ToLower(s["kind"]), s["name"]),
+				Reason: "Kubernetes or the distribution binds this identity itself; the team cannot remove it",
+			})
+		}
+	}
+	return out
+}
+
+// platformSubjects are the identities Kubernetes and its distributions bind
+// for themselves. The list is exhaustive on purpose: a `system:` prefix is not
+// proof that a subject is the platform's. The aggregate groups
+// (system:authenticated, system:unauthenticated, system:anonymous,
+// system:serviceaccounts and system:serviceaccounts:<ns>) carry the same
+// prefix, and a cluster-admin binding on one of those hands the cluster to
+// every user or every workload in it -- the single worst thing this check can
+// find, so it must never be filtered away.
+var platformSubjects = map[string]bool{
+	"system:masters":       true,
+	"system:nodes":         true,
+	"system:node-proxier":  true,
+	"system:bootstrappers": true,
+	"system:monitoring":    true,
+}
+
+// platformSubjectPrefixes cover the identities that carry a component or node
+// name, which cannot be listed exhaustively.
+var platformSubjectPrefixes = []string{
+	"system:kube-",          // kube-controller-manager, kube-scheduler, kube-proxy
+	"system:node:",          // one individual kubelet
+	"system:controller:",    // the built-in controllers
+	"system:bootstrappers:", // kubeadm node bootstrap
+}
+
+// isPlatformSubject reports whether a subject is Kubernetes itself or the
+// distribution's control plane, rather than an identity anybody could have
+// added. Living in a platform namespace is not enough: see platformNamespaceOf.
 func isPlatformSubject(s map[string]string) bool {
-	if strings.HasPrefix(s["name"], "system:") {
+	name := s["name"]
+	if platformSubjects[name] {
 		return true
 	}
-	if skipNamespaces[s["namespace"]] {
-		return true
+	for _, p := range platformSubjectPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
 	}
 	return false
+}
+
+// serviceAccountNamespace pulls the namespace out of the user form of a single
+// ServiceAccount identity, system:serviceaccount:<ns>:<name>. It deliberately
+// does not match system:serviceaccounts:<ns>, which is the group of every
+// ServiceAccount in that namespace.
+func serviceAccountNamespace(name string) (string, bool) {
+	const prefix = "system:serviceaccount:"
+	if !strings.HasPrefix(name, prefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(name, prefix)
+	ns, _, found := strings.Cut(rest, ":")
+	if !found || ns == "" {
+		return "", false
+	}
+	return ns, true
 }
 
 // CheckPlainCredentials reports ConfigMaps holding something that looks like a

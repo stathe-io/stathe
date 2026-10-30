@@ -15,7 +15,8 @@
 </p>
 
 > **Private beta.** `preflight`, `check`, `report`, `baseline` and `compliance`
-> work today. There is no published image or release yet, so build from source.
+> work today. The image is published at `ghcr.io/stathe-io/stathe`; there is no binary
+> release yet, so build from source for the CLI.
 > The commands below assume `stathe` is on your `PATH`; use
 > `go run ./cmd/stathe` while you are in this repository.
 
@@ -26,7 +27,7 @@ Assessed 70 resources in production
 SC-01   high      3  No network separation between workloads
 SC-04   high      1  Credentials stored in plain configuration
 SC-05   high      5  Container runs with excessive privileges
-SC-06   high      2  Service account bound to cluster-admin
+SC-06   high      2  Cluster-admin granted outside the platform's own bindings
 SC-07   high      4  Workload uses a mutable image tag
 SC-09   low       4  Workload has no resource limits
 
@@ -37,20 +38,58 @@ Nothing was changed. This command only reads.
 
 ---
 
+## What stathe is for
+
+A consultant or security officer who has one day in a client's cluster and
+needs to leave behind something the client can act on. stathe is built around
+that day, not around the scan:
+
+1. `preflight` the day before, so nobody finds a missing permission live.
+2. `check` with a permission set the client approved in advance.
+3. `report` as a document an auditor will accept, with NIS2, DORA and ISO 27001
+   references.
+4. `baseline` as reviewed files the client applies in their own change window.
+
+A general scanner can run the checks. The assessment around them is what stathe
+adds.
+
+---
+
 ## Why six checks
 
 kubescape runs hundreds. Trivy finds every CVE in your images. Both are good,
 and stathe does not try to beat them at it.
 
-These six decide how far an attacker gets once they are inside, and that is a
-question about configuration rather than about a CVE count. A fully patched
-image, in a flat network, with a service account bound to `cluster-admin`, is
-still one bad afternoon.
+These six are about configuration rather than about a CVE count. A fully
+patched image, in a flat network, with a service account bound to
+`cluster-admin`, is still one bad afternoon.
+
+What stathe reads is the configuration as it stands. It does not attack
+anything, does not try to reach anything, and cannot tell you what an attacker
+would actually manage to do: that takes a test against the running system, and
+this is not that tool. "Reachable according to the configuration" is the
+strongest claim in here, and the report says so on the cover.
 
 A scan that returns everything returns nothing actionable. Someone still has to
 decide which twenty of the four hundred matter. stathe ships that decision
-instead of the raw list: the platform's own namespaces and the distribution's
-own bindings are filtered out before you see anything.
+instead of the raw list: the platform's own namespaces and the control plane's
+own bindings are filtered out before the checks run.
+
+Every one of those exclusions is printed, under `NOT ASSESSED`, with a count
+and a reason:
+
+```console
+2 findings: 1 high, 1 medium, 0 low
+
+NOT ASSESSED (1, filtered before the checks ran)
+  clusterrolebinding/cluster-admin grants cluster-admin to group system:masters
+      Kubernetes or the distribution binds this identity itself; the team cannot remove it
+```
+
+A filter you cannot see is worse than no filter: a clean result and a quiet
+tool look identical. With `--json` the findings array on stdout is unchanged
+and the exclusions go to stderr, so a pipeline keeps parsing what it always
+parsed and still cannot miss them.
 
 ---
 
@@ -64,8 +103,8 @@ cd stathe
 go build -ldflags "-X main.version=$(git describe --tags --always)" -o stathe ./cmd/stathe
 ```
 
-Go 1.24 or newer. There are no runtime dependencies: the result is a single
-static binary.
+Go 1.26 or newer: the patched `golang.org/x/net` requires it. There are no
+runtime dependencies: the result is a single static binary.
 
 ### Container
 
@@ -83,6 +122,14 @@ docker run --rm \
   -v $HOME/.kube:/kube:ro -e KUBECONFIG=/kube/config \
   stathe:v0.3.0 check
 ```
+
+---
+
+### Verify what you run
+
+Releases are signed without a long-lived key and carry an SBOM and build
+provenance. The commands, and the [threat model](docs/threat-model.md) behind
+them, are in [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -111,8 +158,15 @@ kubectl auth can-i delete deployments --as=system:serviceaccount:stathe:stathe #
 ```
 
 There is no `get` and no `watch`, because the code does not call them. Secrets
-are absent on purpose: stathe reads ConfigMap *key names* to spot credentials
-stored in the clear, and never reads a value of any kind.
+are absent on purpose: stathe has no permission to read them at all.
+
+ConfigMaps are the one place to be precise. Kubernetes cannot list only the key
+names, so the API server returns each ConfigMap in full, values included, and
+that response reaches the machine running stathe. The code keeps the key names
+and discards the values the moment each object is parsed: they are never
+stored, logged, written to a report or sent anywhere. The code that does this
+is a few lines in `internal/scan/cluster.go`, short enough for a security
+officer to read before approving the run.
 
 ### 2. Confirm it will work
 
@@ -230,13 +284,17 @@ stathe check --manifests ./k8s --fail-on high
 
 `--fail-on` takes `high`, `medium`, `low` or `none`.
 
+> Pin the image by digest in a pipeline you care about. A tag can be moved; a
+> digest cannot, and stathe's own `SC-07` check would flag the tag. Find the
+> digest on the [package page](https://github.com/stathe-io/stathe/pkgs/container/stathe).
+
 ### GitHub Actions
 
 ```yaml
 - name: Assess the manifests
   run: |
     docker run --rm -v "$PWD:/work:ro" \
-      ghcr.io/stathe-io/stathe:0.3.0 \
+      ghcr.io/stathe-io/stathe:v0.3.0 \
       check --manifests /work/k8s --fail-on high
 ```
 
@@ -244,7 +302,7 @@ stathe check --manifests ./k8s --fail-on high
 
 ```yaml
 stathe:
-  image: ghcr.io/stathe-io/stathe:0.3.0
+  image: ghcr.io/stathe-io/stathe:v0.3.0
   script:
     - stathe check --manifests ./k8s --fail-on high
 ```
@@ -302,7 +360,7 @@ written.
 | `SC-01` | Network separation | Namespaces with no NetworkPolicy, where any pod reaches any other pod | high |
 | `SC-04` | Plaintext credentials | ConfigMap keys holding passwords, tokens or connection strings | high |
 | `SC-05` | Workload privilege | Privileged containers, host filesystem mounts, missing `securityContext` | high / medium |
-| `SC-06` | Cluster-admin bindings | ServiceAccounts bound to `cluster-admin`, excluding the platform's own | high |
+| `SC-06` | Cluster-admin bindings | Any subject bound to `cluster-admin` — service accounts, users, and the aggregate groups such as `system:authenticated` — excluding the control plane's own identities, which are listed under `NOT ASSESSED` | high |
 | `SC-07` | Image provenance | Floating tags like `:latest` (high), and tags that are not digests (medium) | high / medium |
 | `SC-09` | Resource limits | Containers with no memory limit, where one workload starves a node | low |
 

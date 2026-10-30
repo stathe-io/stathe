@@ -95,18 +95,23 @@ func runCheck(args []string) int {
 	}
 
 	var (
-		resources []scan.Resource
-		source    string
-		err       error
+		inv    *scan.Inventory
+		source string
+		err    error
 	)
 
 	if *manifests != "" {
 		source = *manifests
+		// A directory is assessed exactly as given: every manifest in it was
+		// put there on purpose, so there is nothing to filter and nothing to
+		// report as skipped.
+		var resources []scan.Resource
 		resources, err = scan.LoadDir(*manifests)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "could not read manifests: %v\n", err)
 			return 1
 		}
+		inv = &scan.Inventory{Resources: resources}
 	} else {
 		source = *kubeContext
 		if source == "" {
@@ -115,14 +120,19 @@ func runCheck(args []string) int {
 		if !*asJSON {
 			fmt.Printf("Reading %s...\n", source)
 		}
-		resources, err = scan.LoadCluster(*kubeContext)
+		inv, err = scan.LoadCluster(*kubeContext)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "could not read the cluster: %v\n", err)
 			return 1
 		}
 	}
 
+	resources := inv.Resources
 	findings := scan.Run(resources)
+
+	// What the assessment left out, collected before anything is printed so the
+	// JSON path and the table path report the same exclusions.
+	left := append(inv.Skipped(), scan.PlatformSubjects(resources)...)
 
 	// Accepted risk is applied before anything is printed or counted, so the
 	// JSON a pipeline consumes and the table a human reads agree.
@@ -147,12 +157,20 @@ func runCheck(args []string) int {
 			fmt.Fprintf(os.Stderr, "could not write JSON: %v\n", err)
 			return 1
 		}
+		// The exclusions go to stderr: stdout stays the findings array a
+		// pipeline already parses, and the run still cannot stay quiet about
+		// what it left out. They move into the document itself when the JSON
+		// becomes an object.
+		printLeftOut(os.Stderr, left)
 		return 0
 	}
 
 	fmt.Printf("Assessed %d resources in %s\n\n", len(resources), source)
 	if len(findings) == 0 {
 		fmt.Println("No findings. That is unusual; check that the path is right.")
+		// Especially here: a clean result next to a filter the reader cannot
+		// see is the one claim this tool must never make by omission.
+		printLeftOut(os.Stdout, left)
 		return 0
 	}
 
@@ -198,6 +216,8 @@ func runCheck(args []string) int {
 		fmt.Println("  Renew the date after deciding again, or fix the finding.")
 	}
 
+	printLeftOut(os.Stdout, left)
+
 	fmt.Println("\nNothing was changed. This command only reads.")
 
 	if threshold >= 0 {
@@ -209,6 +229,22 @@ func runCheck(args []string) int {
 		}
 	}
 	return 0
+}
+
+// printLeftOut prints what the assessment did not look at. It is not an
+// appendix: the number of findings only means something next to the number of
+// things that were filtered out before they could become one. Nothing is
+// printed when nothing was left out, which is the honest result for a
+// --manifests run.
+func printLeftOut(w io.Writer, left []scan.Suppressed) {
+	if len(left) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nNOT ASSESSED (%d, filtered before the checks ran)\n", len(left))
+	for _, s := range left {
+		fmt.Fprintf(w, "  %s\n", s.What)
+		fmt.Fprintf(w, "      %s\n", s.Reason)
+	}
 }
 
 // printSummary collapses the findings to one line per check, keeping the
@@ -376,7 +412,11 @@ func runBaseline(args []string) int {
 	if *manifests != "" {
 		resources, err = scan.LoadDir(*manifests)
 	} else {
-		resources, err = scan.LoadCluster(*kubeContext)
+		var inv *scan.Inventory
+		inv, err = scan.LoadCluster(*kubeContext)
+		if inv != nil {
+			resources = inv.Resources
+		}
 		// Against a live cluster the ingress controller can be identified
 		// rather than guessed, which decides which exception to write.
 		if pre, perr := scan.Preflight(*kubeContext); perr == nil {
@@ -390,7 +430,13 @@ func runBaseline(args []string) int {
 
 	opt.IngressNamespace = *ingress
 
-	files := baseline.Generate(scan.Run(resources), opt)
+	assessed := scan.Run(resources)
+	if bad := baseline.InvalidNamespaces(assessed); len(bad) > 0 {
+		fmt.Fprintf(os.Stderr, "refusing to write a baseline: not valid namespace names: %q\n", bad)
+		return 1
+	}
+
+	files := baseline.Generate(assessed, opt)
 	if len(files) == 0 {
 		fmt.Println("Nothing to generate: every namespace already has a NetworkPolicy.")
 		return 0
@@ -398,6 +444,12 @@ func runBaseline(args []string) int {
 
 	for _, f := range files {
 		path := filepath.Join(*outDir, f.Name)
+		// Second line of defence behind the namespace check: never write
+		// outside the output directory, whatever a file is called.
+		if rel, rerr := filepath.Rel(*outDir, path); rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			fmt.Fprintf(os.Stderr, "refusing to write %s: it is outside %s\n", path, *outDir)
+			return 1
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			fmt.Fprintf(os.Stderr, "could not create %s: %v\n", filepath.Dir(path), err)
 			return 1
