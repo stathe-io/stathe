@@ -141,7 +141,7 @@ func Preflight(ctxName string) (*PreflightResult, error) {
 		res.Access = append(res.Access, a)
 	}
 
-	res.Platform = detectPlatform(ctx, cfg)
+	res.Platform = detectPlatform(ctx, cfg, res.Version)
 	return res, nil
 }
 
@@ -201,7 +201,7 @@ func tryList(ctx context.Context, cfg *rest.Config, group, version, resource str
 // the workloads that are running. It deliberately uses only the access stathe
 // already has, so preflight never asks a client for more than the assessment
 // itself will.
-func detectPlatform(ctx context.Context, cfg *rest.Config) Platform {
+func detectPlatform(ctx context.Context, cfg *rest.Config, serverVersion string) Platform {
 	var p Platform
 
 	client, err := dynamic.NewForConfig(cfg)
@@ -240,13 +240,27 @@ func detectPlatform(ctx context.Context, cfg *rest.Config) Platform {
 		{"istio-ingressgateway", "Istio ingress gateway"},
 		{"contour", "Contour"},
 	})
+	// The distribution-specific names come first: on RKE2 the CNI DaemonSet is
+	// rke2-canal, which matched nothing here and came back as "could not
+	// tell" -- a blank that reads as "this cluster has no CNI" when it means
+	// "stathe did not recognise the name".
 	p.CNI = match([][2]string{
+		{"rke2-canal", "Canal (Flannel for networking, Calico for policy), the RKE2 default"},
+		{"rke2-cilium", "Cilium, via the RKE2 chart"},
+		{"rke2-calico-node", "Calico, via the RKE2 chart"},
+		{"canal", "Canal (Flannel for networking, Calico for policy)"},
 		{"calico-node", "Calico"},
 		{"cilium", "Cilium"},
 		{"kube-flannel", "Flannel"},
+		{"flannel", "Flannel"},
 		{"aws-node", "AWS VPC CNI"},
 		{"kube-router", "kube-router"},
+		{"antrea-agent", "Antrea"},
+		{"weave-net", "Weave Net"},
 	})
+	if p.CNI == "" {
+		p.CNI = cniFromDistribution(serverVersion)
+	}
 	p.GitOps = match([][2]string{
 		{"argocd-application-controller", "Argo CD"},
 		{"argocd-server", "Argo CD"},
@@ -255,6 +269,30 @@ func detectPlatform(ctx context.Context, cfg *rest.Config) Platform {
 	})
 
 	return p
+}
+
+// cniFromDistribution infers the CNI from the server version string, which
+// names the distribution on RKE2 and k3s (for example v1.31.4+rke2r1).
+//
+// This is a guess and is worded as one. It exists because "could not tell"
+// reads as "there is no network policy enforcement here", and the difference
+// decides which baseline variant gets prepared the night before -- but a guess
+// presented as a fact is worse than the blank it replaced.
+func cniFromDistribution(serverVersion string) string {
+	v := strings.ToLower(serverVersion)
+	switch {
+	case strings.Contains(v, "rke2"):
+		return "probably Canal, the RKE2 default — inferred from the server version, " +
+			"not from a DaemonSet stathe recognised. Confirm during the kickoff."
+	case strings.Contains(v, "k3s"):
+		return "probably Flannel, the k3s default — inferred from the server version, " +
+			"not from a DaemonSet stathe recognised. Confirm during the kickoff."
+	case strings.Contains(v, "gke"):
+		return "probably GKE's own dataplane — inferred from the server version. Confirm during the kickoff."
+	case strings.Contains(v, "eks"):
+		return "probably the AWS VPC CNI — inferred from the server version. Confirm during the kickoff."
+	}
+	return ""
 }
 
 // short trims an API error to the part a reader needs. The full text carries

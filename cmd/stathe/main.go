@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/stathe-io/stathe/internal/baseline"
@@ -147,7 +148,7 @@ func runCheck(args []string) int {
 			source = "an unnamed context"
 		}
 		if !*asJSON {
-			fmt.Printf("Reading %s at %s\n", source, inv.Server)
+			printClusterHeader(os.Stdout, source, inv.Server, inv.Version)
 		}
 	}
 
@@ -207,17 +208,7 @@ func runCheck(args []string) int {
 		// report; this is the view you read out loud in a kickoff.
 		printSummary(findings)
 	} else {
-		for _, f := range findings {
-			fmt.Println(f)
-			// With a framework selected, the obligation goes on its own indented
-			// line. Putting it in the table would push the detail text off a
-			// terminal, and the detail is the part an engineer acts on.
-			if *framework != "" {
-				for _, c := range scan.ControlsFor(f.ID, scan.Framework(*framework)) {
-					fmt.Printf("%-16s%s  %s\n", "", c.Ref, c.Name)
-				}
-			}
-		}
+		printFindings(os.Stdout, findings, *framework)
 	}
 
 	counts := map[scan.Risk]int{}
@@ -277,6 +268,134 @@ func printLeftOut(w io.Writer, left []scan.Suppressed) {
 		fmt.Fprintf(w, "  %s\n", s.What)
 		fmt.Fprintf(w, "      %s\n", s.Reason)
 	}
+}
+
+// printClusterHeader is the same three lines for check and preflight.
+//
+// They were different before, which meant the go/no-go a client approved and
+// the assessment that followed could not be lined up against each other -- and
+// check said only "the current context", which is not something a reader can
+// check. An empty field says it is unknown rather than printing a blank that
+// reads as a fact.
+func printClusterHeader(w io.Writer, context, server, version string) {
+	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+	fmt.Fprintf(tw, "Context\t%s\n", nonEmpty(context))
+	fmt.Fprintf(tw, "Server\t%s\n", nonEmpty(server))
+	fmt.Fprintf(tw, "Version\t%s\n", nonEmpty(version))
+	tw.Flush()
+}
+
+// printFindings writes the findings as a table that lines up whatever the
+// resource names happen to be.
+//
+// The fixed-width columns it replaces were fine on the demo cluster and broke
+// on the first real one: a long namespace plus a long workload name pushed the
+// detail -- the part an engineer acts on -- off the right of the terminal.
+//
+// Findings that are the same problem on several workloads, such as one image
+// reused across a chart's deployments, collapse onto one row with the
+// workloads listed under it. The document keeps them separate, because each is
+// evidence about its own resource and stathe diff has to be able to tell them
+// apart; this is a decision about reading, not about recording.
+func printFindings(w io.Writer, findings []scan.Finding, framework string) {
+	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+
+	for _, g := range groupForDisplay(findings) {
+		f := g.first
+		resource := f.Resource
+		if len(g.resources) > 1 {
+			resource = plural(len(g.resources), kindOf(g.resources))
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", f.ID, f.Risk, resource, f.Detail)
+
+		if len(g.resources) > 1 {
+			for _, r := range g.resources {
+				fmt.Fprintf(tw, "\t\t\t  %s\n", r)
+			}
+		}
+
+		// With a framework selected, the obligation goes on its own line.
+		// Putting it in the table would widen every row by the longest
+		// article reference in the set.
+		if framework != "" {
+			for _, c := range scan.ControlsFor(f.ID, scan.Framework(framework)) {
+				fmt.Fprintf(tw, "\t\t\t%s  %s\n", c.Ref, c.Name)
+			}
+		}
+	}
+	tw.Flush()
+}
+
+// displayGroup is one row of the table: a finding, and every resource it was
+// reported on with the same wording.
+type displayGroup struct {
+	first     scan.Finding
+	resources []string
+}
+
+// groupForDisplay collects findings that say exactly the same thing about
+// different resources, keeping the order Run put them in.
+//
+// The key is the wording rather than the cause: two findings that share an
+// image but differ in what they say about it are two problems, and merging them
+// would lose the half the reader needs.
+func groupForDisplay(findings []scan.Finding) []displayGroup {
+	var order []string
+	groups := map[string]*displayGroup{}
+
+	for _, f := range findings {
+		key := f.ID + "|" + string(f.Risk) + "|" + f.Detail
+		g, ok := groups[key]
+		if !ok {
+			g = &displayGroup{first: f}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.resources = append(g.resources, f.Resource)
+	}
+
+	out := make([]displayGroup, 0, len(order))
+	for _, key := range order {
+		out = append(out, *groups[key])
+	}
+	return out
+}
+
+// kindOf names what a group of resources are, taken from the references
+// themselves so the count reads correctly: SC-01 reports namespaces and SC-06
+// reports bindings, and calling either of those "workloads" is the kind of
+// small wrongness that makes a reader stop trusting the rest.
+func kindOf(resources []string) string {
+	kind := ""
+	for _, r := range resources {
+		parts := strings.Split(r, "/")
+		if len(parts) < 2 {
+			return "resource"
+		}
+		// shop/deployment/web, namespace/shop, clusterrolebinding/ci: the kind
+		// is always the segment before the name.
+		this := parts[len(parts)-2]
+		if kind == "" {
+			kind = this
+		}
+		if this != kind {
+			// A mixed group, such as a Deployment and a DaemonSet with the
+			// same problem. Naming one of them would be wrong.
+			return "resource"
+		}
+	}
+	if kind == "" {
+		return "resource"
+	}
+	return kind
+}
+
+// plural keeps a count readable: "1 workloads" reads as a bug in the tool.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // printNotes prints what the reader has to weigh that is not a finding: a
@@ -742,9 +861,8 @@ func runPreflight(args []string) int {
 		return 1
 	}
 
-	fmt.Printf("Context   %s\n", res.Context)
-	fmt.Printf("Server    %s\n", res.Server)
-	fmt.Printf("Version   %s\n\n", res.Version)
+	printClusterHeader(os.Stdout, res.Context, res.Server, res.Version)
+	fmt.Println()
 
 	fmt.Println("ACCESS")
 	for _, a := range res.Access {

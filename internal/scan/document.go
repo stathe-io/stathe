@@ -39,8 +39,12 @@ type Document struct {
 
 	// Server is the API server behind that context, which is what distinguishes
 	// two clusters whose contexts are both called "production".
-	Server           string `json:"server,omitempty"`
-	ResourcesChecked int    `json:"resources_checked"`
+	Server string `json:"server,omitempty"`
+
+	// KubernetesVersion matters when comparing two assessments: a finding can
+	// appear because the cluster was upgraded under it.
+	KubernetesVersion string `json:"kubernetes_version,omitempty"`
+	ResourcesChecked  int    `json:"resources_checked"`
 
 	// PlatformNamespaces is which namespaces this assessment held to be out of
 	// scope. Two assessments are comparable only if that answer is recorded
@@ -102,6 +106,7 @@ func NewDocument(version, source string, inv *Inventory, at time.Time,
 		AssessedAt:         at.UTC(),
 		Source:             source,
 		Server:             inv.Server,
+		KubernetesVersion:  inv.Version,
 		ResourcesChecked:   len(inv.Resources),
 		PlatformNamespaces: platformNamespaces,
 		Notes:              inv.Notes,

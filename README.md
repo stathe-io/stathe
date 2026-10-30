@@ -166,10 +166,16 @@ them, are in [SECURITY.md](SECURITY.md).
 ### 1. Approve the access
 
 Hand [`cluster/readonly-rbac.yaml`](cluster/readonly-rbac.yaml) to whoever owns
-the cluster before anything runs. It is the whole permission set: seven
-resource types, one verb. The seventh, `validatingadmissionpolicies`, is
-optional -- without it stathe simply cannot tell you that an admission policy
-may already enforce what a finding asks for.
+the cluster before anything runs. It is the whole permission set: ten resource
+types, one verb. One of them, `validatingadmissionpolicies`, is optional —
+without it stathe simply cannot tell you that an admission policy may already
+enforce what a finding asks for.
+
+`pods` is in there for the pods no controller created. A CI system that starts
+a build pod per job is often running the most privileged workload on the
+cluster, and it belongs to no Deployment. Pods a listed controller created are
+dropped the moment they are parsed: they are that controller's pod template
+with a generated name. There is no `log` and no `exec` anywhere in the file.
 
 ```sh
 kubectl apply -f cluster/readonly-rbac.yaml
@@ -518,14 +524,27 @@ written.
 | ID | Check | What it catches | Severity |
 |---|---|---|---|
 | `SC-01` | Network separation | Namespaces with no NetworkPolicy, where any pod reaches any other pod | high |
-| `SC-04` | Plaintext credentials | ConfigMap keys holding passwords, tokens or connection strings | high |
-| `SC-05` | Workload privilege | Privileged containers, host filesystem mounts, missing `securityContext` | high / medium |
+| `SC-04` | Plaintext credentials | ConfigMap keys that *end* in a credential word (`DB_PASSWORD`, `client-secret`, `STRIPE_API_KEY`), never ones that merely contain it (`SECRET_SCANNER_ENABLED` is a feature flag) | high |
+| `SC-05` | Workload privilege | Privileged containers, missing `securityContext`, and host mounts ranked by what they are worth: a container runtime socket or the kubelet's credentials are control of the node, `/proc` is not | high / medium |
 | `SC-06` | Cluster-admin bindings | Any subject bound to `cluster-admin` — service accounts, users, and the aggregate groups such as `system:authenticated` — excluding the control plane's own identities, which are listed under `NOT ASSESSED` | high |
 | `SC-07` | Image provenance | Floating tags like `:latest` (high), and tags that are not digests (medium) | high / medium |
 | `SC-09` | Resource limits | Containers with no memory limit, where one workload starves a node | low |
 
 Severity is the severity for a production platform, not a generic score. Every
 finding carries why it matters and the next step.
+
+They are read from Deployments, StatefulSets, DaemonSets, **Jobs, CronJobs and
+bare Pods**. That last group matters more than it sounds: a CI system that
+starts a build pod per job is often running the most privileged workload on the
+cluster, and it belongs to no Deployment. Pods a listed controller created are
+dropped on parse — they are that controller's pod template with a generated
+name, so reporting them is one finding twice.
+
+One workload with three host mounts is one finding, worded around the worst
+path with the others listed. One image reused across a chart's deployments is
+one row in the output, with the workloads under it — while the JSON document
+keeps them separate, because each is evidence about its own resource and
+`stathe diff` has to tell them apart.
 
 ### Not covered yet
 
