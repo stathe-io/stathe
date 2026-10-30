@@ -281,7 +281,11 @@ func CheckMutableTags(rs []Resource) []Finding {
 				risk = High
 				detail = fmt.Sprintf("image %q uses a floating tag that can change under you", image)
 			}
-			out = append(out, finding("SC-07", r.Ref(), detail, risk))
+			f := finding("SC-07", r.Ref(), detail, risk)
+			// The image, not the workload: a handful of charts can account for
+			// most of the SC-07 findings in a cluster, and the fix is per image.
+			f.Cause = image
+			out = append(out, f)
 		}
 	}
 	return out

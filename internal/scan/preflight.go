@@ -33,6 +33,10 @@ type Access struct {
 	Group    string
 	Allowed  bool
 	Reason   string
+
+	// Optional types do not decide the go/no-go. stathe assesses the cluster
+	// without them; all that is lost is a note in the output.
+	Optional bool
 }
 
 // Platform is what the cluster turned out to be running. Every field is best
@@ -101,7 +105,7 @@ func Preflight(ctxName string) (*PreflightResult, error) {
 	reviews := client.Resource(gvrOf("authorization.k8s.io", "v1", "selfsubjectaccessreviews"))
 
 	for _, w := range wanted {
-		a := Access{Resource: w.gvr.Resource, Group: w.gvr.Group}
+		a := Access{Resource: w.gvr.Resource, Group: w.gvr.Group, Optional: w.optional}
 
 		review := &unstructured.Unstructured{Object: map[string]interface{}{
 			"apiVersion": "authorization.k8s.io/v1",
@@ -131,7 +135,7 @@ func Preflight(ctxName string) (*PreflightResult, error) {
 			}
 		}
 
-		if !a.Allowed {
+		if !a.Allowed && !a.Optional {
 			res.OK = false
 		}
 		res.Access = append(res.Access, a)

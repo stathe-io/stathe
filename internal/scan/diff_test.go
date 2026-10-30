@@ -158,7 +158,13 @@ func TestCompareFlagsALegacyFile(t *testing.T) {
 
 func TestDocumentRoundTrips(t *testing.T) {
 	at := time.Date(2026, 10, 30, 9, 15, 0, 0, time.UTC)
-	doc := NewDocument("v0.3.1", "production", 70, at,
+	inv := &Inventory{
+		Resources: make([]Resource, 70),
+		Server:    "https://api.cluster.example:6443",
+		Notes:     []string{"ValidatingAdmissionPolicy \"require-digests\" mentions container images."},
+	}
+
+	doc := NewDocument("v0.3.1", "production", inv, at,
 		[]Finding{f("SC-01", "namespace/shop", "no NetworkPolicy", High)},
 		[]Accepted{{
 			Finding:   f("SC-09", "shop/deployment/web", "no memory limit", Low),
@@ -166,6 +172,7 @@ func TestDocumentRoundTrips(t *testing.T) {
 		}},
 		[]Exception{{ID: "SC-07", Resource: "shop/deployment/web", Reason: "pinned next sprint", Expires: "2026-01-01"}},
 		[]Suppressed{{What: "3 resources in namespace kube-system", Reason: "a platform namespace"}},
+		[]string{"kube-system", "kube-public"},
 	)
 
 	raw, err := json.Marshal(doc)
@@ -183,6 +190,13 @@ func TestDocumentRoundTrips(t *testing.T) {
 	}
 	if got.Stathe != "v0.3.1" || got.Source != "production" || got.ResourcesChecked != 70 {
 		t.Errorf("provenance did not survive the round trip: %+v", got)
+	}
+	if got.Server != "https://api.cluster.example:6443" {
+		t.Errorf("the API server distinguishes two clusters both called production, got %q", got.Server)
+	}
+	if len(got.PlatformNamespaces) != 2 || len(got.Notes) != 1 {
+		t.Errorf("scope and notes did not survive the round trip: %d namespaces, %d notes",
+			len(got.PlatformNamespaces), len(got.Notes))
 	}
 	if !got.AssessedAt.Equal(at) {
 		t.Errorf("expected %s, got %s", at, got.AssessedAt)

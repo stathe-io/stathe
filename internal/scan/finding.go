@@ -21,8 +21,14 @@ type Finding struct {
 	Risk     Risk   `json:"risk"`
 	Resource string `json:"resource"`
 	Detail   string `json:"detail"`
-	Why      string `json:"why"`
-	Next     string `json:"next"`
+
+	// Cause is what several findings have in common when they do, such as the
+	// one image eighteen workloads pull. It is what makes a list of findings
+	// actionable: eighteen rows is a backlog, one image is an afternoon. Empty
+	// when a finding has no shared cause beyond its own resource.
+	Cause string `json:"cause,omitempty"`
+	Why   string `json:"why"`
+	Next  string `json:"next"`
 
 	// Controls are the regulatory obligations this finding is evidence about.
 	// They travel with the finding in JSON so a pipeline can group by article

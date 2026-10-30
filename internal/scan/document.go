@@ -33,10 +33,23 @@ type Document struct {
 	Stathe     string    `json:"stathe_version"`
 	AssessedAt time.Time `json:"assessed_at"`
 
-	// Source is the context or directory that was assessed, as it was named on
-	// the command line.
-	Source           string `json:"source"`
+	// Source is the context or directory that was assessed, resolved: an empty
+	// --context becomes the name of the context that was actually used.
+	Source string `json:"source"`
+
+	// Server is the API server behind that context, which is what distinguishes
+	// two clusters whose contexts are both called "production".
+	Server           string `json:"server,omitempty"`
 	ResourcesChecked int    `json:"resources_checked"`
+
+	// PlatformNamespaces is which namespaces this assessment held to be out of
+	// scope. Two assessments are comparable only if that answer is recorded
+	// rather than remembered.
+	PlatformNamespaces []string `json:"platform_namespaces,omitempty"`
+
+	// Notes are things to weigh that are neither findings nor exclusions, such
+	// as a control stathe can see but cannot interpret.
+	Notes []string `json:"notes,omitempty"`
 
 	Findings []Finding `json:"findings"`
 
@@ -71,17 +84,29 @@ type LapsedRisk struct {
 }
 
 // NewDocument assembles a document from what a run produced.
-func NewDocument(version, source string, resourcesChecked int, at time.Time,
-	findings []Finding, accepted []Accepted, lapsed []Exception, notAssessed []Suppressed) Document {
+//
+// It takes the Inventory rather than a list of resources so that everything the
+// load learned -- which cluster, which API server, what it could not read, what
+// it noticed -- reaches the document without each caller having to remember to
+// pass it.
+// notAssessed is passed in rather than taken from the Inventory: the load only
+// knows what it skipped, and the checks know what they filtered. Both belong in
+// the same section, so the caller that has both assembles it.
+func NewDocument(version, source string, inv *Inventory, at time.Time,
+	findings []Finding, accepted []Accepted, lapsed []Exception,
+	notAssessed []Suppressed, platformNamespaces []string) Document {
 
 	doc := Document{
-		SchemaVersion:    SchemaVersion,
-		Stathe:           version,
-		AssessedAt:       at.UTC(),
-		Source:           source,
-		ResourcesChecked: resourcesChecked,
-		Findings:         findings,
-		NotAssessed:      notAssessed,
+		SchemaVersion:      SchemaVersion,
+		Stathe:             version,
+		AssessedAt:         at.UTC(),
+		Source:             source,
+		Server:             inv.Server,
+		ResourcesChecked:   len(inv.Resources),
+		PlatformNamespaces: platformNamespaces,
+		Notes:              inv.Notes,
+		Findings:           findings,
+		NotAssessed:        notAssessed,
 	}
 
 	for _, a := range accepted {

@@ -1,7 +1,7 @@
 # The least access stathe can do its work with.
 #
 # Hand this to whoever owns the cluster before the assessment starts. It is the
-# whole permission set: six resource types, one verb. There is no `get` here
+# whole permission set: seven resource types, one verb. There is no `get` here
 # and no `watch`, because the code does not call them -- it lists each type
 # once and works on what comes back.
 #
@@ -12,7 +12,7 @@
 # prints what this grants. It also lists a dozen read-only endpoints like
 # /version and /apis -- those come from system:discovery and system:public-info-viewer,
 # which Kubernetes gives every authenticated identity, and are not granted here.
-# The six `list` rules at the bottom are the whole of what this file adds. And:
+# The `list` rules at the bottom are the whole of what this file adds. And:
 #
 #   kubectl auth can-i create pods --as=system:serviceaccount:stathe:stathe
 #   kubectl auth can-i get secrets --as=system:serviceaccount:stathe:stathe
@@ -68,6 +68,15 @@ rules:
   # ClusterRoleBindings: to find workloads bound to cluster-admin.
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["clusterrolebindings"]
+    verbs: ["list"]
+
+  # ValidatingAdmissionPolicies: to notice that the cluster may already enforce
+  # image digests, which is a note in the output and never a reason to drop a
+  # finding -- stathe does not interpret policy expressions. A cluster without
+  # this API is fine; stathe says it could not read the type and carries on, so
+  # this rule can be left out if your policy forbids it.
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingadmissionpolicies"]
     verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
