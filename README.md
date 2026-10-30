@@ -466,6 +466,5 @@ Working on stathe itself: [docs/development.md](docs/development.md).
 
 Apache 2.0. See [LICENSE](LICENSE).
 
-Built by [Jarno Kristelijn](https://www.linkedin.com/in/jarnokristelijn/),
-DevSecOps engineer in the Netherlands. A finding it gets wrong is worth more to
-me than one it gets right — [open an issue](https://github.com/stathe-io/stathe/issues).
+A finding it gets wrong is worth more than one it gets right —
+[open an issue](https://github.com/stathe-io/stathe/issues).
