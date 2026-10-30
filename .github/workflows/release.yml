@@ -1,0 +1,94 @@
+name: release
+
+# A release is a tag. The image and the binaries are built from that tag by this
+# workflow and by nothing else, signed without a long-lived key, and described
+# by provenance anyone can verify. See SECURITY.md for the commands.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # create the GitHub release
+      packages: write        # push to ghcr.io
+      id-token: write        # keyless signing (OIDC)
+      attestations: write    # build provenance
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      VERSION: ${{ github.ref_name }}
+    steps:
+      # TODO(hardening): pin every `uses:` to a full commit SHA (`pinact run`).
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test before anything is published
+        run: |
+          go mod verify
+          go vet ./...
+          go test -race -count=1 ./...
+
+      - name: Build static binaries
+        run: |
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}
+            ext=""; [ "$os" = windows ] && ext=".exe"
+            out="stathe_${VERSION}_${os}_${arch}"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "dist/${out}${ext}" ./cmd/stathe
+          done
+          cd dist && sha256sum * > SHA256SUMS
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign the checksums
+        run: cosign sign-blob --yes --bundle dist/SHA256SUMS.bundle dist/SHA256SUMS
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # No `latest` tag on purpose: stathe's own SC-07 flags floating tags.
+      - name: Build and push the image, with SBOM and provenance
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.VERSION }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            REVISION=${{ github.sha }}
+          sbom: true
+          provenance: mode=max
+
+      - name: Sign the image by digest
+        run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${VERSION}" dist/* --generate-notes --verify-tag

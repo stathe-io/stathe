@@ -4,13 +4,17 @@
 # manager or utilities. That is partly hardening and partly an argument: a
 # client's security officer can see exactly what would run in their cluster.
 
-FROM golang:1.24-alpine AS build
+# TODO(hardening): pin both base images by digest (FROM image:tag@sha256:...).
+# A tag can be moved underneath a build; a digest cannot. Dependabot keeps
+# digest pins current once they are in place.
+FROM golang:1.26-alpine AS build
 
 WORKDIR /src
 
 # Dependencies first, so a code change does not re-download the module cache.
+# `go mod verify` fails the build if a downloaded module differs from go.sum.
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && go mod verify
 
 COPY . .
 
@@ -25,7 +29,12 @@ RUN /out/stathe version && /out/stathe check --manifests cluster/northwind >/dev
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
-LABEL org.opencontainers.image.title="stathe" \
+ARG VERSION=dev
+ARG REVISION=unknown
+
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.title="stathe" \
       org.opencontainers.image.description="Read-only Kubernetes security assessment" \
       org.opencontainers.image.source="https://github.com/stathe-io/stathe" \
       org.opencontainers.image.licenses="Apache-2.0"

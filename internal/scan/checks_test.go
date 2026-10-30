@@ -102,11 +102,13 @@ func TestClusterAdmin(t *testing.T) {
 		name     string
 		resource Resource
 		want     bool
+		wantRisk Risk
 	}{
 		{
 			name:     "a service account someone added is reported",
 			resource: binding("ci", map[string]string{"kind": "ServiceAccount", "name": "runner", "namespace": "build"}),
 			want:     true,
+			wantRisk: High,
 		},
 		{
 			name:     "the built-in system:masters binding is not reported",
@@ -114,8 +116,49 @@ func TestClusterAdmin(t *testing.T) {
 			want:     false,
 		},
 		{
-			name:     "the platform's own controllers are not reported",
+			name:     "a service account in a platform namespace is reported, at medium",
 			resource: binding("helm", map[string]string{"kind": "ServiceAccount", "name": "helm", "namespace": "kube-system"}),
+			want:     true,
+			wantRisk: Medium,
+		},
+		{
+			name:     "the user form of a platform-namespace service account is reported, at medium",
+			resource: binding("helm", map[string]string{"kind": "User", "name": "system:serviceaccount:kube-system:helm"}),
+			want:     true,
+			wantRisk: Medium,
+		},
+		{
+			name:     "cluster-admin for every authenticated user is reported",
+			resource: binding("oops", map[string]string{"kind": "Group", "name": "system:authenticated"}),
+			want:     true,
+			wantRisk: High,
+		},
+		{
+			name:     "cluster-admin for anonymous users is reported",
+			resource: binding("oops", map[string]string{"kind": "Group", "name": "system:unauthenticated"}),
+			want:     true,
+			wantRisk: High,
+		},
+		{
+			name:     "cluster-admin for every service account is reported",
+			resource: binding("oops", map[string]string{"kind": "Group", "name": "system:serviceaccounts"}),
+			want:     true,
+			wantRisk: High,
+		},
+		{
+			name:     "cluster-admin for every service account in a namespace is reported",
+			resource: binding("oops", map[string]string{"kind": "Group", "name": "system:serviceaccounts:build"}),
+			want:     true,
+			wantRisk: High,
+		},
+		{
+			name:     "a node group binding is not reported",
+			resource: binding("nodes", map[string]string{"kind": "Group", "name": "system:nodes"}),
+			want:     false,
+		},
+		{
+			name:     "a kube-controller-manager binding is not reported",
+			resource: binding("kcm", map[string]string{"kind": "User", "name": "system:kube-controller-manager"}),
 			want:     false,
 		},
 	}
@@ -124,7 +167,18 @@ func TestClusterAdmin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := CheckClusterAdmin([]Resource{tt.resource})
 			if (len(got) > 0) != tt.want {
-				t.Errorf("expected reported=%v, got %d findings", tt.want, len(got))
+				t.Fatalf("expected reported=%v, got %d findings", tt.want, len(got))
+			}
+			if tt.want && got[0].Risk != tt.wantRisk {
+				t.Errorf("expected risk %q, got %q (%s)", tt.wantRisk, got[0].Risk, got[0].Detail)
+			}
+
+			// Whatever is not reported has to be accountable: every subject
+			// ends up in exactly one of the two lists, never in neither.
+			suppressed := PlatformSubjects([]Resource{tt.resource})
+			if len(got)+len(suppressed) != 1 {
+				t.Errorf("subject is neither reported nor accounted for: %d findings, %d suppressed",
+					len(got), len(suppressed))
 			}
 		})
 	}

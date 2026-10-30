@@ -73,3 +73,11 @@ image-save: image ## Build and save the image as a portable tar file
 	@echo
 	@echo "Wrote stathe-$(VERSION).tar.gz ($$(du -h stathe-$(VERSION).tar.gz | cut -f1))"
 	@echo "On the other machine:  docker load < stathe-$(VERSION).tar.gz"
+
+.PHONY: vuln
+vuln: ## Check dependencies for known vulnerabilities
+	go run golang.org/x/vuln/cmd/govulncheck@v1.1.5 ./...
+
+.PHONY: fuzz
+fuzz: ## Fuzz the manifest parser for 60 seconds
+	go test ./internal/scan -run '^$$' -fuzz FuzzLoadDir -fuzztime 60s

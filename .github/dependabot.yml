@@ -1,0 +1,20 @@
+# Keep every moving part current: Go modules, the base images in the
+# Dockerfile, and the actions the pipelines run. A security tool that lags on
+# its own dependencies is hard to defend in front of a client's security officer.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      k8s:
+        patterns: ["k8s.io/*", "sigs.k8s.io/*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
