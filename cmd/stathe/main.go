@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,6 +41,13 @@ Flags:
                       (high, medium, low, none). Default none.
   --exceptions DIR    Where to look for .stathe.yaml, the accepted-risk
                       register. Each entry needs a reason and an expiry date.
+  --platform-namespaces NS,NS
+                      Namespaces that belong to whoever runs the platform
+                      rather than to the team being assessed, on top of the
+                      kube-* defaults. Their resources are left out, counted
+                      and listed under NOT ASSESSED.
+  --summary           One line per check, with what the findings have in
+                      common, instead of one line per finding.
 
 stathe only ever reads. It never writes to a cluster.
 `
@@ -82,7 +90,12 @@ func runCheck(args []string) int {
 	summary := fs.Bool("summary", false, "one line per check instead of one per finding")
 	failOn := fs.String("fail-on", "none", "exit 1 when a finding at this severity or above remains (high, medium, low, none)")
 	exceptionsDir := fs.String("exceptions", "", "directory holding .stathe.yaml (default: the manifests dir, or the working directory)")
+	platformNS := fs.String("platform-namespaces", "", "comma-separated namespaces to treat as the platform's own, on top of the defaults")
 	fs.Parse(args)
+
+	// Recorded in the document, and listed under NOT ASSESSED with the reason
+	// that they were named here rather than that every cluster has them.
+	platformNamespaces := scan.AddPlatformNamespaces(strings.Split(*platformNS, ",")...)
 
 	threshold, ok := failThreshold(*failOn)
 	if !ok {
@@ -116,19 +129,25 @@ func runCheck(args []string) int {
 			fmt.Fprintf(os.Stderr, "could not read manifests: %v\n", err)
 			return 1
 		}
-		inv = &scan.Inventory{Resources: resources}
+		inv = scan.NewInventory(resources)
 	} else {
-		source = *kubeContext
-		if source == "" {
-			source = "the current context"
-		}
-		if !*asJSON {
-			fmt.Printf("Reading %s...\n", source)
-		}
 		inv, err = scan.LoadCluster(*kubeContext)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "could not read the cluster: %v\n", err)
 			return 1
+		}
+
+		// Name the cluster that was actually read, not the argument that was
+		// typed. Assessing the wrong cluster is the one mistake here nobody can
+		// correct afterwards, and it is the reader who has to be able to catch
+		// it -- so the context and the API server are printed, and both end up
+		// in the document.
+		source = inv.Context
+		if source == "" {
+			source = "an unnamed context"
+		}
+		if !*asJSON {
+			fmt.Printf("Reading %s at %s\n", source, inv.Server)
 		}
 	}
 
@@ -160,8 +179,8 @@ func runCheck(args []string) int {
 		// what was filtered out, and which version of stathe looked at what.
 		// Everything a reader needs before treating the file as evidence, and
 		// everything stathe diff needs to compare two of them.
-		doc := scan.NewDocument(version, source, len(resources), time.Now(),
-			findings, accepted, lapsed, left)
+		doc := scan.NewDocument(version, source, inv, time.Now(),
+			findings, accepted, lapsed, left, platformNamespaces)
 
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -177,6 +196,7 @@ func runCheck(args []string) int {
 		fmt.Println("No findings. That is unusual; check that the path is right.")
 		// Especially here: a clean result next to a filter the reader cannot
 		// see is the one claim this tool must never make by omission.
+		printNotes(os.Stdout, inv.Notes)
 		printLeftOut(os.Stdout, left)
 		return 0
 	}
@@ -223,7 +243,12 @@ func runCheck(args []string) int {
 		fmt.Println("  Renew the date after deciding again, or fix the finding.")
 	}
 
+	printNotes(os.Stdout, inv.Notes)
 	printLeftOut(os.Stdout, left)
+
+	if *summary {
+		printNextSteps(os.Stdout, source, *manifests != "")
+	}
 
 	fmt.Println("\nNothing was changed. This command only reads.")
 
@@ -254,15 +279,36 @@ func printLeftOut(w io.Writer, left []scan.Suppressed) {
 	}
 }
 
+// printNotes prints what the reader has to weigh that is not a finding: a
+// control stathe can see but cannot interpret, for instance. It never changes a
+// risk level, and it is printed next to the findings rather than instead of
+// them.
+func printNotes(w io.Writer, notes []string) {
+	if len(notes) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nNOTED (%d, neither findings nor exclusions)\n", len(notes))
+	for _, n := range notes {
+		fmt.Fprintf(w, "  %s\n", n)
+	}
+}
+
 // printSummary collapses the findings to one line per check, keeping the
 // catalogue order rather than re-sorting, so two runs are comparable at a
 // glance. The count is what a reader needs first: how many of this, not which
 // ones, which is the next question and a different view.
+//
+// Under each line it names what the findings have in common. Eighteen SC-07
+// findings that all come from three images are three decisions, not eighteen,
+// and a summary that stops at the number leaves the reader to work that out
+// from a list it just refused to print.
 func printSummary(findings []scan.Finding) {
 	type row struct {
-		id    string
-		risk  scan.Risk
-		count int
+		id     string
+		risk   scan.Risk
+		count  int
+		causes map[string]int
+		order  []string
 	}
 	var order []string
 	seen := map[string]*row{}
@@ -270,7 +316,7 @@ func printSummary(findings []scan.Finding) {
 	for _, f := range findings {
 		r, ok := seen[f.ID]
 		if !ok {
-			r = &row{id: f.ID, risk: f.Risk}
+			r = &row{id: f.ID, risk: f.Risk, causes: map[string]int{}}
 			seen[f.ID] = r
 			order = append(order, f.ID)
 		}
@@ -278,12 +324,65 @@ func printSummary(findings []scan.Finding) {
 			r.risk = f.Risk
 		}
 		r.count++
+
+		// A check that names a shared cause is grouped by it; the rest are
+		// grouped by resource, which is the honest answer when each finding
+		// stands on its own.
+		cause := f.Cause
+		if cause == "" {
+			cause = f.Resource
+		}
+		if _, ok := r.causes[cause]; !ok {
+			r.order = append(r.order, cause)
+		}
+		r.causes[cause]++
 	}
 
 	for _, id := range order {
 		r := seen[id]
 		c := scan.Catalogue[id]
 		fmt.Printf("%-7s %-8s %2d  %s\n", r.id, r.risk, r.count, c.Title)
+
+		// Only worth printing when grouping actually reduces the problem, and
+		// only the few that carry most of it. The full list is one command away.
+		if len(r.order) < r.count {
+			sort.SliceStable(r.order, func(i, j int) bool {
+				return r.causes[r.order[i]] > r.causes[r.order[j]]
+			})
+			shown := r.order
+			if len(shown) > 3 {
+				shown = shown[:3]
+			}
+			for _, cause := range shown {
+				fmt.Printf("%-17s%2d× %s\n", "", r.causes[cause], cause)
+			}
+			if rest := len(r.order) - len(shown); rest > 0 {
+				fmt.Printf("%-17s    and %d more\n", "", rest)
+			}
+		}
+	}
+}
+
+// printNextSteps closes the summary with the two commands that follow it. A
+// view that deliberately withholds the detail has to say where the detail is,
+// or it reads as the whole answer.
+func printNextSteps(w io.Writer, source string, hasManifests bool) {
+	target := "--context " + source
+	if hasManifests {
+		target = "--manifests " + source
+	}
+
+	// The description goes above the command rather than after it: a context
+	// name or a directory path is as long as it happens to be, and a trailing
+	// comment that lines up on this cluster will not line up on the next one.
+	fmt.Fprintln(w, "\nNEXT")
+	for _, step := range [][2]string{
+		{"every finding, one per line", "stathe check " + target},
+		{"the document to keep and compare against the next assessment", "stathe check " + target + " --json > findings.json"},
+		{"the client-ready report", "stathe report --findings findings.json --client NAME --out report.html"},
+		{"the fix as files, applying nothing", "stathe baseline " + target + " --out ./fix"},
+	} {
+		fmt.Fprintf(w, "\n  %s\n    %s\n", step[0], step[1])
 	}
 }
 
@@ -654,7 +753,13 @@ func runPreflight(args []string) int {
 			name = a.Resource + "." + a.Group
 		}
 		mark := "ok  "
-		if !a.Allowed {
+		switch {
+		case a.Allowed:
+		case a.Optional:
+			// Not a no-go: the assessment runs without it, and all that is lost
+			// is a note about a control that may already apply.
+			mark = "absent"
+		default:
 			mark = "MISSING"
 		}
 		fmt.Printf("  %-8s list %-36s %s\n", mark, name, a.Reason)

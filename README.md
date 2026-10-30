@@ -14,9 +14,12 @@
   <a href="#in-a-pipeline">Pipelines</a>
 </p>
 
-> **Private beta.** `preflight`, `check`, `report`, `baseline` and `compliance`
-> work today. The image is published at `ghcr.io/stathe-io/stathe`; there is no binary
-> release yet, so build from source for the CLI.
+> **Private beta.** `preflight`, `check`, `diff`, `report`, `baseline` and
+> `compliance` work today. The image is published at
+> `ghcr.io/stathe-io/stathe`; the `v0.3.0` tag there was pushed by hand and is
+> `linux/arm64` only, so on an amd64 host build from source or wait for the
+> next release, which the pipeline publishes for both architectures with
+> binaries, checksums, an SBOM and a signature.
 > The commands below assume `stathe` is on your `PATH`; use
 > `go run ./cmd/stathe` while you are in this repository.
 
@@ -90,6 +93,14 @@ A filter you cannot see is worse than no filter: a clean result and a quiet
 tool look identical. With `--json` the same exclusions are a `not_assessed`
 section of the document, so a pipeline cannot drop them either.
 
+A third section, `NOTED`, is for what stathe can see but cannot judge. If the
+cluster has a `ValidatingAdmissionPolicy` that mentions images, that is said
+plainly — and the SC-07 findings stay exactly as they were, at the same risk.
+stathe does not read CEL, Kyverno's language or Rego, so it does not get to
+decide that something else already handles a finding. Deciding that is your
+job, and recording the decision is what [`.stathe.yaml`](docs/accepted-risk.md)
+is for.
+
 ---
 
 ## Install
@@ -118,9 +129,27 @@ officer can see exactly what would run.
 
 ```sh
 docker run --rm \
-  -v $HOME/.kube:/kube:ro -e KUBECONFIG=/kube/config \
+  --mount type=bind,src=$HOME/.kube/config,dst=/kube/config,readonly \
+  --user "$(id -u):$(id -g)" \
+  -e KUBECONFIG=/kube/config \
   stathe:v0.3.0 check
 ```
+
+Two details worth copying rather than simplifying:
+
+- **`--mount`, not `-v`.** With `-v`, Docker silently creates a root-owned
+  empty directory when the source path does not exist, and the run then fails
+  with `is a directory` — pointing at the wrong problem. `--mount` fails
+  immediately, naming the path it could not find.
+- **`--user`.** A kubeconfig is usually mode 600 and the image runs as uid
+  65532, so without this the file is unreadable. stathe needs no write access
+  anywhere, so running as yourself costs nothing.
+
+Both mistakes are recognised: if the kubeconfig cannot be read, the error says
+which path was tried and which of the two it looks like.
+
+Running the binary directly on a node, with no container runtime involved, is
+simpler still — and on an air-gapped host it is usually the smoothest path.
 
 ---
 
@@ -137,8 +166,10 @@ them, are in [SECURITY.md](SECURITY.md).
 ### 1. Approve the access
 
 Hand [`cluster/readonly-rbac.yaml`](cluster/readonly-rbac.yaml) to whoever owns
-the cluster before anything runs. It is the whole permission set: six resource
-types, one verb.
+the cluster before anything runs. It is the whole permission set: seven
+resource types, one verb. The seventh, `validatingadmissionpolicies`, is
+optional -- without it stathe simply cannot tell you that an admission policy
+may already enforce what a finding asks for.
 
 ```sh
 kubectl apply -f cluster/readonly-rbac.yaml
@@ -218,6 +249,55 @@ stathe check --manifests ./k8s
 | `--framework NAME` | Annotate each finding with the obligation it evidences |
 | `--fail-on LEVEL` | Exit 1 when a finding at this severity or above remains |
 | `--exceptions DIR` | Where to look for `.stathe.yaml` |
+| `--platform-namespaces NS,NS` | Namespaces belonging to whoever runs the platform rather than to the team being assessed, on top of the `kube-*` defaults |
+
+#### `--summary`
+
+One line per check, and under it what the findings have in common — only when
+grouping actually reduces the problem:
+
+```console
+$ stathe check --manifests cluster/northwind --summary
+Assessed 17 resources in cluster/northwind
+
+SC-01   high      3  No network separation between workloads
+SC-04   high      1  Credentials stored in plain configuration
+SC-05   high      6  Container runs with excessive privileges
+                  3× northwind-tracking/deployment/tracking
+                  1× northwind-orders/deployment/orders
+                  1× northwind-orders/deployment/postgres
+                     and 1 more
+SC-06   high      2  Cluster-admin granted outside the platform's own bindings
+SC-07   high      4  Workload uses a mutable image tag
+
+20 findings: 9 high, 7 medium, 4 low
+```
+
+For SC-07 that grouping is by image, not by workload: eighteen findings from
+three charts are three decisions, and the fix is per image. The summary ends
+with the commands that follow it, because a view that deliberately withholds
+the detail has to say where the detail is.
+
+#### `--platform-namespaces`
+
+A real cluster runs a GitOps controller, a policy engine and a
+runtime-security agent, and those are not the team's findings. stathe only
+knows the `kube-*` namespaces by default, so name the rest:
+
+```sh
+stathe check --context production --platform-namespaces fleet-system,cattle-system,kyverno,falco
+```
+
+Their resources are left out of the checks, counted, and listed under
+`NOT ASSESSED` with the reason that you declared them — distinct from the
+reason given for the namespaces every cluster has. The set ends up in the JSON
+document too, because which namespaces an assessment held out of scope is part
+of what it did, and two assessments are only comparable if that is recorded
+rather than remembered.
+
+This is a statement about **scope**. A statement about **risk** — a privileged
+agent that has to be privileged — belongs in
+[`.stathe.yaml`](docs/accepted-risk.md) instead.
 
 ### `stathe diff`
 
@@ -397,6 +477,10 @@ exceptions:
     reason: "LimitRange on the namespace sets a default memory limit"
     expires: 2027-03-01
 ```
+
+Worked examples for the cases that actually come up -- a runtime-security
+agent, a CNI, a chart that cannot pin a digest -- are in
+[docs/accepted-risk.md](docs/accepted-risk.md).
 
 Three rules make this a register rather than a mute button.
 
