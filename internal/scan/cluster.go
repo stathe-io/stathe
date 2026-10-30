@@ -31,6 +31,15 @@ var wanted = []struct {
 	{schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, "Deployment", true, false},
 	{schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, "StatefulSet", true, false},
 	{schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, "DaemonSet", true, false},
+	{schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, "Job", true, false},
+	{schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}, "CronJob", true, false},
+
+	// Bare pods only: Add drops the ones a listed controller created. A CI
+	// system that starts a build pod per job is often running the most
+	// privileged workload on the cluster, and until now stathe could not see it
+	// at all -- which means a clean result for a team namespace could have been
+	// the blind spot rather than the truth.
+	{schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}, "Pod", true, false},
 	{schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}, "ConfigMap", true, false},
 	{schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}, "NetworkPolicy", true, false},
 	{schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"}, "ClusterRoleBinding", false, false},
@@ -154,6 +163,11 @@ func LoadCluster(ctxName string) (*Inventory, error) {
 		}
 	}
 
+	// The same three lines preflight prints, from the same source, so a reader
+	// comparing yesterday's go/no-go with today's run is comparing like with
+	// like. A version stathe could not read is left blank rather than guessed.
+	inv.Version, _ = serverVersion(cfg)
+
 	for _, w := range wanted {
 		list, err := client.Resource(w.gvr).List(ctx, metav1.ListOptions{})
 		if err != nil {
@@ -201,6 +215,23 @@ func fromUnstructured(obj map[string]interface{}, kind, name, ns string) Resourc
 			Name:      name,
 			Namespace: ns,
 		},
+	}
+
+	// Owner references decide whether a pod is its own workload or a copy of a
+	// controller's template; see Resource.OwnedByAController.
+	if meta, ok := obj["metadata"].(map[string]interface{}); ok {
+		if owners, ok := meta["ownerReferences"].([]interface{}); ok {
+			for _, o := range owners {
+				m, ok := o.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				ownerKind, _ := m["kind"].(string)
+				ownerName, _ := m["name"].(string)
+				r.Metadata.OwnerReferences = append(r.Metadata.OwnerReferences,
+					OwnerReference{Kind: ownerKind, Name: ownerName})
+			}
+		}
 	}
 
 	if spec, ok := obj["spec"].(map[string]interface{}); ok {

@@ -238,8 +238,6 @@ func serviceAccountNamespace(name string) (string, bool) {
 // credential. ConfigMaps are not secrets, are rarely access-controlled, and are
 // routinely committed to Git.
 func CheckPlainCredentials(rs []Resource) []Finding {
-	markers := []string{"PASSWORD", "SECRET", "TOKEN", "APIKEY", "API_KEY", "PRIVATE_KEY"}
-
 	var out []Finding
 	for _, r := range rs {
 		if r.Kind != "ConfigMap" {
@@ -247,12 +245,8 @@ func CheckPlainCredentials(rs []Resource) []Finding {
 		}
 		var hits []string
 		for k := range r.Data {
-			up := strings.ToUpper(k)
-			for _, m := range markers {
-				if strings.Contains(up, m) {
-					hits = append(hits, k)
-					break
-				}
+			if looksLikeACredentialKey(k) {
+				hits = append(hits, k)
 			}
 		}
 		if len(hits) > 0 {
@@ -262,6 +256,58 @@ func CheckPlainCredentials(rs []Resource) []Finding {
 		}
 	}
 	return out
+}
+
+// credentialSuffixes are the endings of a key that holds a secret. The test is
+// on the end of the name rather than anywhere in it, because the word is a
+// noun there: PASSWORD, DB_PASSWORD and app.password all name a password,
+// while SECRET_SCANNER_ENABLED names a feature flag.
+var credentialSuffixes = []string{
+	"PASSWORD", "PASSWD", "SECRET", "TOKEN", "APIKEY", "API_KEY",
+	"PRIVATE_KEY", "ACCESS_KEY", "SECRET_KEY", "CREDENTIALS", "PASSPHRASE",
+}
+
+// notCredentials are endings that follow a credential word and turn it into
+// something else: a switch, a list of names, a file path, a duration.
+var notCredentials = []string{
+	"ENABLED", "DISABLED", "REQUIRED", "NAME", "NAMES", "ACCOUNT", "ACCOUNTS",
+	"INFO", "PATH", "FILE", "DIR", "URL", "URI", "TYPE", "PROVIDER", "REF",
+	"KEYS", "COUNT", "TTL", "TIMEOUT", "EXPIRY", "ROTATION", "POLICY",
+	"VERSION", "FORMAT", "LENGTH", "MIN", "MAX",
+}
+
+// looksLikeACredentialKey decides whether a ConfigMap key names a secret.
+//
+// SC-04 is reported at high, and a high-severity false positive is the most
+// expensive output this tool produces: it is the one a client checks first, and
+// the credibility of every other finding rides on it. A substring match made
+// FOO_SECRET_SCANNER_ENABLED a credential. So the rule is narrower and says no
+// in the cases that are demonstrably not credentials -- which does mean a key
+// called SECRET_FOR_THE_DATABASE is missed. Missing one is recoverable;
+// inventing one in front of a client is not.
+func looksLikeACredentialKey(key string) bool {
+	up := strings.ToUpper(key)
+
+	// Separators vary by convention (DB_PASSWORD, db.password, dbPassword as
+	// DBPASSWORD); normalising them means one rule instead of three.
+	norm := strings.NewReplacer("-", "_", ".", "_", "/", "_").Replace(up)
+
+	for _, no := range notCredentials {
+		if strings.HasSuffix(norm, "_"+no) || norm == no {
+			return false
+		}
+	}
+
+	for _, suffix := range credentialSuffixes {
+		if norm == suffix || strings.HasSuffix(norm, "_"+suffix) {
+			return true
+		}
+		// No separator at all: DBPASSWORD, mysqlpassword.
+		if !strings.Contains(norm, "_") && strings.HasSuffix(norm, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckMutableTags reports images referenced by a tag rather than a digest.
@@ -312,11 +358,16 @@ func CheckPrivileged(rs []Resource) []Finding {
 			}
 		}
 
+		// Every host mount on a workload becomes one finding, ranked by the
+		// worst path; see hostPathFinding.
+		var hostPaths []string
 		for _, v := range volumes(r) {
 			if hp, ok := v["hostPath"].(map[string]interface{}); ok {
-				out = append(out, finding("SC-05", r.Ref(),
-					fmt.Sprintf("mounts the node filesystem at %v", hp["path"]), High))
+				hostPaths = append(hostPaths, fmt.Sprintf("%v", hp["path"]))
 			}
+		}
+		if f, ok := hostPathFinding(r.Ref(), hostPaths); ok {
+			out = append(out, f)
 		}
 	}
 	return out

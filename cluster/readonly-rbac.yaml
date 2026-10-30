@@ -1,7 +1,7 @@
 # The least access stathe can do its work with.
 #
 # Hand this to whoever owns the cluster before the assessment starts. It is the
-# whole permission set: seven resource types, one verb. There is no `get` here
+# whole permission set: ten resource types, one verb. There is no `get` here
 # and no `watch`, because the code does not call them -- it lists each type
 # once and works on what comes back.
 #
@@ -52,6 +52,24 @@ rules:
   # mounts, missing resource limits and mutable image tags.
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["list"]
+
+  # Jobs and CronJobs: the same pod template, on workloads that exist only
+  # while they run. A nightly job with the node mounted is the one nobody is
+  # watching.
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["list"]
+
+  # Pods: only the ones no controller created. A pod started per CI build is
+  # often the most privileged workload on the cluster and belongs to no
+  # Deployment, so without this it is invisible. Pods owned by a workload above
+  # are dropped on parse: they are that controller's template over again.
+  #
+  # This reads pod specs, never logs and never `exec` -- neither verb is
+  # granted anywhere in this file.
+  - apiGroups: [""]
+    resources: ["pods"]
     verbs: ["list"]
 
   # ConfigMaps: only the key names are kept, to spot credentials kept outside a

@@ -30,6 +30,11 @@ type Inventory struct {
 	Context string
 	Server  string
 
+	// Version is the API server's version, as preflight reports it. Blank when
+	// it could not be read: a cluster that would not say is not a cluster
+	// running an unknown version, and the output says which.
+	Version string
+
 	// Notes are things the reader needs to weigh that are not findings and not
 	// exclusions -- a mitigating control stathe can see but cannot interpret,
 	// for instance. They never change a risk level: stathe does not get to
@@ -78,6 +83,13 @@ func NewInventory(rs []Resource) *Inventory {
 // skipped when it does not. It is the only place the namespace filter is
 // applied, so nothing can be dropped without being counted.
 func (inv *Inventory) Keep(r Resource) bool {
+	// A pod a controller created is that controller's pod template with a
+	// generated name. It is not skipped scope, it is the same object twice, so
+	// it is not counted as an exclusion either.
+	if r.Kind == "Pod" && r.OwnedByAController() {
+		return false
+	}
+
 	ns := r.Metadata.Namespace
 
 	skip := skipNamespaces[ns]
