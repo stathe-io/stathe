@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  /* Company page logo, square. Rendered with Chrome headless at the size you
+     want; LinkedIn asks for at least 300x300 and shows it as small as 48px in
+     the feed, so the mark has to survive that. The wordmark does not, which is
+     why this is the "s" and the square from docs/banner.png rather than the
+     whole name. Palette matches company.html. */
+  :root {
+    --ink: #0a1420;
+    --glow: #0b2a32;
+    --word: #e8eef4;
+    --accent: #19c7b2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { width: 600px; height: 600px; }
+
+  body {
+    background:
+      radial-gradient(120% 150% at 50% -25%, var(--glow) 0%, rgba(11,42,50,0) 65%),
+      var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* The mark sits well inside the canvas: LinkedIn rounds the corners and in
+     some places masks it to a circle, so nothing important goes near an edge. */
+  .mark {
+    display: flex;
+    align-items: flex-end;
+    gap: 22px;
+    color: var(--word);
+    font-size: 390px;
+    font-weight: 900;
+    letter-spacing: -14px;
+    line-height: 0.78;
+    /* The "s" has no descender, so the glyph box centres lower than the glyph
+       does. Nudge the whole group up to centre it optically rather than
+       geometrically. */
+    transform: translateY(-38px);
+  }
+
+  .dot {
+    width: 74px;
+    height: 74px;
+    background: var(--accent);
+    /* Lifted just off the bottom of the "s" -- flush read as a full stop,
+       26px (company.html's value, set for a 62px wordmark) read as detached.
+       Measured against the glyph, not guessed: see the comment on .mark. */
+    margin-bottom: 13px;
+    flex: none;
+  }
+</style>
+<div class="mark">s<span class="dot"></span></div>
