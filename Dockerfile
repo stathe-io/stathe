@@ -7,7 +7,7 @@
 # TODO(hardening): pin both base images by digest (FROM image:tag@sha256:...).
 # A tag can be moved underneath a build; a digest cannot. Dependabot keeps
 # digest pins current once they are in place.
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 
 WORKDIR /src
 
