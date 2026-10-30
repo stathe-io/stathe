@@ -137,7 +137,9 @@
   <p class="disclaimer">
     Produced with stathe {{.Meta.KitVersion}}. The assessment is read-only:
     no configuration was changed and no workload was restarted while gathering
-    these findings.
+    these findings. It reports the configuration as it stood.
+    It does not certify compliance, and is not issued by a conformity assessment body.
+    {{if .Meta.Provenance}}<br>{{.Meta.Provenance}}{{end}}
   </p>
 </div>
 

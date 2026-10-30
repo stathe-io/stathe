@@ -169,6 +169,10 @@ func PlatformSubjects(rs []Resource) []Suppressed {
 			})
 		}
 	}
+	// Sorted for the same reason the findings are: this list goes into the
+	// document, and a document that reorders itself between runs cannot be
+	// diffed against the previous one.
+	sort.Slice(out, func(i, j int) bool { return out[i].What < out[j].What })
 	return out
 }
 
@@ -351,18 +355,20 @@ func CheckResourceLimits(rs []Resource) []Finding {
 	return out
 }
 
-// Run executes every check and returns the findings sorted by risk.
+// Run executes every check and returns the findings sorted by risk, then by ID,
+// then by resource and detail.
+//
+// The last two are not cosmetic. Sorting only on risk and ID leaves findings
+// that share both in whatever order the resources arrived in, and from a live
+// cluster that is the order the API server happened to list them -- not stable
+// between two runs. The ordering here is total: every field a reader can see
+// takes part in it, so the same cluster produces the same document and a diff
+// between two runs shows only what actually changed.
 func Run(rs []Resource) []Finding {
 	var out []Finding
 	for _, c := range All {
 		out = append(out, c(rs)...)
 	}
-	order := map[Risk]int{High: 0, Medium: 1, Low: 2}
-	sort.SliceStable(out, func(i, j int) bool {
-		if order[out[i].Risk] != order[out[j].Risk] {
-			return order[out[i].Risk] < order[out[j].Risk]
-		}
-		return out[i].ID < out[j].ID
-	})
+	sortFindings(out)
 	return out
 }

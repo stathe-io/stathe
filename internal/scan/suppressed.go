@@ -14,9 +14,9 @@ import (
 // wrong, these say what was not considered, and both are printed.
 type Suppressed struct {
 	// What names the thing left out the way a reader would look it up.
-	What string
+	What string `json:"what"`
 	// Reason is written for someone who did not choose the filter.
-	Reason string
+	Reason string `json:"reason"`
 }
 
 // Inventory is the result of a load: the resources that will be assessed, and

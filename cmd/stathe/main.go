@@ -24,6 +24,9 @@ Usage:
   stathe check --context NAME     Assess a live cluster (read-only)
   stathe check                    Assess the current kubectl context
   stathe report --client NAME     Turn findings into a client-ready document
+  stathe diff BEFORE.json AFTER.json
+                                  Compare two assessments: what was fixed, what
+                                  is new, what was accepted rather than fixed
   stathe preflight --context NAME Check access the day before an assessment
   stathe baseline --out DIR       Generate the fix as files, applying nothing
   stathe compliance               Which NIS2 measures these checks can evidence
@@ -52,6 +55,8 @@ func main() {
 		os.Exit(runCheck(os.Args[2:]))
 	case "report":
 		os.Exit(runReport(os.Args[2:]))
+	case "diff":
+		os.Exit(runDiff(os.Args[2:]))
 	case "compliance":
 		os.Exit(runCompliance(os.Args[2:]))
 	case "preflight":
@@ -151,17 +156,19 @@ func runCheck(args []string) int {
 	findings, accepted, lapsed := scan.ApplyExceptions(findings, exceptions, time.Now())
 
 	if *asJSON {
+		// One document, carrying the findings, what was accepted, what lapsed,
+		// what was filtered out, and which version of stathe looked at what.
+		// Everything a reader needs before treating the file as evidence, and
+		// everything stathe diff needs to compare two of them.
+		doc := scan.NewDocument(version, source, len(resources), time.Now(),
+			findings, accepted, lapsed, left)
+
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(findings); err != nil {
+		if err := enc.Encode(doc); err != nil {
 			fmt.Fprintf(os.Stderr, "could not write JSON: %v\n", err)
 			return 1
 		}
-		// The exclusions go to stderr: stdout stays the findings array a
-		// pipeline already parses, and the run still cannot stay quiet about
-		// what it left out. They move into the document itself when the JSON
-		// becomes an object.
-		printLeftOut(os.Stderr, left)
 		return 0
 	}
 
@@ -341,12 +348,15 @@ func runReport(args []string) int {
 		return 1
 	}
 
-	var findings []scan.Finding
-	if err := json.Unmarshal(raw, &findings); err != nil {
+	// Both schema versions are accepted: a client may be reporting on a file
+	// produced before the format changed.
+	doc, err := scan.ParseDocument(raw)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not parse findings JSON: %v\n", err)
 		fmt.Fprintln(os.Stderr, "expected the output of: stathe check --json")
 		return 1
 	}
+	findings := doc.Findings
 	if len(findings) == 0 {
 		fmt.Fprintln(os.Stderr, "no findings to report")
 		return 1
@@ -363,6 +373,7 @@ func runReport(args []string) int {
 		Author:      *author,
 		Email:       *email,
 		KitVersion:  version,
+		Provenance:  provenanceOf(doc),
 	}
 
 	w := os.Stdout
@@ -385,6 +396,28 @@ func runReport(args []string) int {
 		fmt.Fprintf(os.Stderr, "wrote %s (%d findings)\n", *out, len(findings))
 	}
 	return 0
+}
+
+// provenanceOf is the sentence on the report cover that ties the document to
+// the run it came from. A findings file in the old format cannot supply it, and
+// says so: a reader must not take the report date for the assessment date.
+func provenanceOf(doc scan.Document) string {
+	if doc.SchemaVersion < 2 {
+		return "Rendered from a findings file in the pre-v2 format, which records neither " +
+			"the time of the assessment nor what it was pointed at. The date above is the " +
+			"date of this document, not of the assessment."
+	}
+
+	s := fmt.Sprintf("Rendered from a stathe document (schema %d) produced by stathe %s on %s",
+		doc.SchemaVersion, nonEmpty(doc.Stathe), doc.AssessedAt.Format("2 January 2006 at 15:04 MST"))
+	if doc.Source != "" {
+		s += ", against " + doc.Source
+	}
+	s += fmt.Sprintf(". %d resources were checked", doc.ResourcesChecked)
+	if n := len(doc.NotAssessed); n > 0 {
+		s += fmt.Sprintf("; %d exclusions are listed in that document", n)
+	}
+	return s + "."
 }
 
 // runBaseline writes the fix to disk and stops there. It never applies
@@ -464,6 +497,136 @@ func runBaseline(args []string) int {
 	fmt.Printf("\n%d files in %s/. Nothing was applied.\n", len(files), *outDir)
 	fmt.Printf("Read %s/README.md before applying anything in enforcing/.\n", *outDir)
 	return 0
+}
+
+// runDiff compares two assessments. It is the retest: the command that turns
+// "we fixed it" from a claim into something a client can put in front of an
+// auditor, and the reason stathe check --json carries provenance.
+func runDiff(args []string) int {
+	fs := flag.NewFlagSet("diff", flag.ExitOnError)
+	failOnNew := fs.Bool("fail-on-new", false, "exit 1 when the later assessment has findings the earlier one did not")
+	files := parseInterspersed(fs, args)
+
+	if len(files) != 2 {
+		fmt.Fprintln(os.Stderr, "stathe diff needs two files: stathe diff before.json after.json")
+		fmt.Fprintln(os.Stderr, "both are the output of: stathe check --json")
+		return 2
+	}
+
+	before, code := readDocument(files[0])
+	if code != 0 {
+		return code
+	}
+	after, code := readDocument(files[1])
+	if code != 0 {
+		return code
+	}
+
+	d := scan.Compare(before, after)
+
+	fmt.Printf("Before   %s", describe(before))
+	fmt.Printf("After    %s", describe(after))
+	fmt.Println()
+
+	// Said before the numbers, not after them: a reader who takes the counts at
+	// face value and finds the caveat underneath has already drawn a
+	// conclusion the data does not support.
+	if d.VersionChanged {
+		fmt.Printf("The two assessments came from different versions of stathe (%s and %s).\n",
+			nonEmpty(d.BeforeVersion), nonEmpty(d.AfterVersion))
+		fmt.Println("A finding that appears here can also be a check that did not exist before,")
+		fmt.Println("rather than something that changed in the cluster.")
+		fmt.Println()
+	}
+	if d.SchemaDowngrade {
+		fmt.Println("One of these files predates the stathe document format, so it carries no")
+		fmt.Println("record of which version produced it or what that run left out.")
+		fmt.Println()
+	}
+
+	printFindingSet("FIXED", d.Resolved)
+	printFindingSet("NEW", d.New)
+	printFindingSet("ACCEPTED SINCE (not fixed: the risk was accepted in .stathe.yaml)", d.NewlyAccepted)
+	printFindingSet("NO LONGER ACCEPTED (the acceptance was removed or expired)", d.NoLongerAccepted)
+
+	fmt.Printf("%d fixed, %d new, %d unchanged", len(d.Resolved), len(d.New), len(d.Unchanged))
+	if len(d.NewlyAccepted) > 0 {
+		fmt.Printf(", %d accepted since", len(d.NewlyAccepted))
+	}
+	fmt.Println()
+
+	if len(d.Resolved) == 0 && len(d.New) == 0 && len(d.NewlyAccepted) == 0 && len(d.NoLongerAccepted) == 0 {
+		fmt.Println("\nNothing changed between these two assessments.")
+	}
+
+	if *failOnNew && len(d.New) > 0 {
+		fmt.Printf("\nFailing: %d findings are new and --fail-on-new is set.\n", len(d.New))
+		return 1
+	}
+	return 0
+}
+
+// parseInterspersed parses flags that appear before, between or after the
+// positional arguments, and returns the positional ones.
+//
+// Go's flag package stops at the first non-flag argument, so
+// `stathe diff before.json after.json --fail-on-new` would otherwise fail with
+// a message about the file count, which is not what is wrong. Nobody should
+// have to learn where a flag is allowed to sit.
+func parseInterspersed(fs *flag.FlagSet, args []string) []string {
+	var positional []string
+	for len(args) > 0 {
+		fs.Parse(args)
+		args = fs.Args()
+		if len(args) == 0 {
+			break
+		}
+		positional = append(positional, args[0])
+		args = args[1:]
+	}
+	return positional
+}
+
+func readDocument(path string) (scan.Document, int) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not read %s: %v\n", path, err)
+		return scan.Document{}, 1
+	}
+	doc, err := scan.ParseDocument(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not parse %s: %v\n", path, err)
+		return scan.Document{}, 1
+	}
+	return doc, 0
+}
+
+// describe names what a document was produced from. A version 1 file knows
+// none of this, and says so rather than printing blanks that read as facts.
+func describe(d scan.Document) string {
+	if d.SchemaVersion < 2 {
+		return fmt.Sprintf("%d findings, from a file that records nothing about the run\n", len(d.Findings))
+	}
+	return fmt.Sprintf("%s  %s  stathe %s  %d resources, %d findings\n",
+		d.AssessedAt.Format("2006-01-02 15:04 MST"), nonEmpty(d.Source),
+		nonEmpty(d.Stathe), d.ResourcesChecked, len(d.Findings))
+}
+
+func printFindingSet(heading string, fs []scan.Finding) {
+	if len(fs) == 0 {
+		return
+	}
+	fmt.Printf("\n%s (%d)\n", heading, len(fs))
+	for _, f := range fs {
+		fmt.Printf("  %s\n", f)
+	}
+}
+
+func nonEmpty(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
 }
 
 // runPreflight is the day-before check. It exits non-zero on a no-go so it can
