@@ -70,10 +70,12 @@ jobs:
       - name: Tests (with the race detector)
         run: go test -race -count=1 ./...
 
-      - name: Dependencies with known vulnerabilities
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-          govulncheck ./...
+      # VULN_TOOLCHAIN=local: scan with the toolchain this job installed, which
+      # is the one that built everything above. The Makefile pins a version for
+      # a laptop, where "whatever is installed" is how a clean local scan and a
+      # failing CI scan disagreed in the first place.
+      - name: Dependencies and standard library with known vulnerabilities
+        run: make vuln VULN_TOOLCHAIN=local
 
       - name: Fuzz the manifest parser briefly
         run: go test ./internal/scan -run '^$' -fuzz FuzzLoadDir -fuzztime 30s
