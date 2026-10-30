@@ -423,11 +423,19 @@ func printNotes(w io.Writer, notes []string) {
 // from a list it just refused to print.
 func printSummary(findings []scan.Finding) {
 	type row struct {
-		id     string
-		risk   scan.Risk
-		count  int
-		causes map[string]int
-		order  []string
+		id    string
+		risk  scan.Risk
+		count int
+
+		// A check is grouped by what its findings share only when every one of
+		// them shares something: SC-07 findings all name an image, while SC-05
+		// findings name a host path only when that is what is wrong. Falling
+		// back per finding rather than per check mixes the two.
+		allHaveCause  bool
+		byCause       map[string]int
+		causeOrder    []string
+		byResource    map[string]int
+		resourceOrder []string
 	}
 	var order []string
 	seen := map[string]*row{}
@@ -435,7 +443,11 @@ func printSummary(findings []scan.Finding) {
 	for _, f := range findings {
 		r, ok := seen[f.ID]
 		if !ok {
-			r = &row{id: f.ID, risk: f.Risk, causes: map[string]int{}}
+			r = &row{
+				id: f.ID, risk: f.Risk, allHaveCause: true,
+				byCause:    map[string]int{},
+				byResource: map[string]int{},
+			}
 			seen[f.ID] = r
 			order = append(order, f.ID)
 		}
@@ -444,17 +456,21 @@ func printSummary(findings []scan.Finding) {
 		}
 		r.count++
 
-		// A check that names a shared cause is grouped by it; the rest are
-		// grouped by resource, which is the honest answer when each finding
-		// stands on its own.
-		cause := f.Cause
-		if cause == "" {
-			cause = f.Resource
+		// Both groupings are collected, and one is chosen per check below.
+		// Mixing them in a single list put a bare "/" from a host mount next
+		// to a workload reference, which reads as a glitch and is one.
+		if f.Cause == "" {
+			r.allHaveCause = false
 		}
-		if _, ok := r.causes[cause]; !ok {
-			r.order = append(r.order, cause)
+		if _, seen := r.byCause[f.Cause]; !seen {
+			r.causeOrder = append(r.causeOrder, f.Cause)
 		}
-		r.causes[cause]++
+		r.byCause[f.Cause]++
+
+		if _, seen := r.byResource[f.Resource]; !seen {
+			r.resourceOrder = append(r.resourceOrder, f.Resource)
+		}
+		r.byResource[f.Resource]++
 	}
 
 	for _, id := range order {
@@ -462,20 +478,25 @@ func printSummary(findings []scan.Finding) {
 		c := scan.Catalogue[id]
 		fmt.Printf("%-7s %-8s %2d  %s\n", r.id, r.risk, r.count, c.Title)
 
+		groups, order := r.byResource, r.resourceOrder
+		if r.allHaveCause {
+			groups, order = r.byCause, r.causeOrder
+		}
+
 		// Only worth printing when grouping actually reduces the problem, and
 		// only the few that carry most of it. The full list is one command away.
-		if len(r.order) < r.count {
-			sort.SliceStable(r.order, func(i, j int) bool {
-				return r.causes[r.order[i]] > r.causes[r.order[j]]
+		if len(order) < r.count {
+			sort.SliceStable(order, func(i, j int) bool {
+				return groups[order[i]] > groups[order[j]]
 			})
-			shown := r.order
+			shown := order
 			if len(shown) > 3 {
 				shown = shown[:3]
 			}
-			for _, cause := range shown {
-				fmt.Printf("%-17s%2d× %s\n", "", r.causes[cause], cause)
+			for _, g := range shown {
+				fmt.Printf("%-17s%2d× %s\n", "", groups[g], g)
 			}
-			if rest := len(r.order) - len(shown); rest > 0 {
+			if rest := len(order) - len(shown); rest > 0 {
 				fmt.Printf("%-17s    and %d more\n", "", rest)
 			}
 		}
