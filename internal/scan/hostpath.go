@@ -93,7 +93,64 @@ func rankHostPath(path string) (hostPathRank, string) {
 	if match, ok := underAny(p, nodeReadPaths); ok {
 		return nodeRead, fmt.Sprintf("%s, which exposes the node's processes, devices or logs", match)
 	}
+
+	// A parent grants everything its children grant. Only comparing downwards
+	// ranked /etc/kubernetes as control of the node and plain /etc, which
+	// contains it, as "some other host mount" -- so the broader mount scored
+	// lower than the narrower one. Longhorn mounts /etc, and stathe reported
+	// that workload as "mounts /dev", naming the least alarming of its five
+	// host paths.
+	//
+	// The sentence names the path the manifest actually asked for, with what
+	// sits under it as the reason. A finding that says /etc/kubernetes about a
+	// manifest that says /etc sends the reader looking for a mount that is not
+	// there.
+	if child, rank, ok := containsAny(p); ok {
+		switch rank {
+		case nodeControl:
+			return nodeControl, fmt.Sprintf("%s, which contains %s and so is control of the node: "+
+				"anything there can start a privileged container that no cluster RBAC applies to", p, child)
+		case nodeWrite:
+			return nodeWrite, fmt.Sprintf("%s, which contains %s and so decides what the node runs "+
+				"or who may log into it", p, child)
+		default:
+			return nodeRead, fmt.Sprintf("%s, which contains %s and so exposes the node's "+
+				"processes, devices or logs", p, child)
+		}
+	}
+
 	return hostPathOther, ""
+}
+
+// containsAny reports the worst-ranked listed path that sits beneath this one,
+// so a mount of a directory is judged by what it hands over rather than by its
+// own name. It returns the first such path in rank order, to name in the
+// finding.
+func containsAny(path string) (string, hostPathRank, bool) {
+	for _, group := range []struct {
+		paths []string
+		rank  hostPathRank
+	}{
+		{runtimeSockets, nodeControl},
+		{nodeWritePaths, nodeWrite},
+		{nodeReadPaths, nodeRead},
+	} {
+		for _, candidate := range sorted(group.paths) {
+			if strings.HasPrefix(candidate, path+"/") {
+				return candidate, group.rank, true
+			}
+		}
+	}
+	return "", hostPathOther, false
+}
+
+// sorted keeps the named child deterministic: several listed paths can sit
+// under one mount, and the finding has to read the same on every run for
+// `stathe diff` to work.
+func sorted(xs []string) []string {
+	out := append([]string(nil), xs...)
+	sort.Strings(out)
+	return out
 }
 
 // underAny reports whether a path is one of the listed paths or sits beneath
