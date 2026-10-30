@@ -45,6 +45,16 @@ jobs:
           go vet ./...
           go test -race -count=1 ./...
 
+      # The same gate CI applies, because CI does not gate a tag push and this
+      # is the only thing standing between a known-vulnerable build and a
+      # signed release. v0.3.1-rc.1 was published with a Go 1.26.0 standard
+      # library carrying 34 known vulnerabilities -- tested, signed, with an
+      # SBOM and provenance describing exactly that. A release that cannot say
+      # it ran this check is a release whose attestations describe something
+      # nobody should run.
+      - name: No known vulnerabilities in what is about to be published
+        run: make vuln VULN_TOOLCHAIN=local
+
       - name: Build static binaries
         run: |
           mkdir -p dist
