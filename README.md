@@ -15,11 +15,17 @@
 </p>
 
 > **Private beta.** `preflight`, `check`, `diff`, `report`, `baseline` and
-> `compliance` work today. The image is published at
-> `ghcr.io/stathe-io/stathe`; the `v0.3.0` tag there was pushed by hand and is
-> `linux/arm64` only, so on an amd64 host build from source or wait for the
-> next release, which the pipeline publishes for both architectures with
-> binaries, checksums, an SBOM and a signature.
+> `compliance` work today.
+>
+> A release is a tag, and the pipeline builds everything from it: the image at
+> `ghcr.io/stathe-io/stathe` for `linux/amd64` and `linux/arm64`, static
+> binaries with `SHA256SUMS`, an SBOM, build provenance and a keyless
+> signature. Verify them with the commands in [SECURITY.md](SECURITY.md).
+>
+> One exception worth knowing: the `v0.3.0` tag predates that pipeline. It was
+> pushed by hand and is `arm64` only, so it will not run on an amd64 host. Use
+> a later tag.
+>
 > The commands below assume `stathe` is on your `PATH`; use
 > `go run ./cmd/stathe` while you are in this repository.
 
@@ -119,8 +125,8 @@ runtime dependencies: the result is a single static binary.
 ### Container
 
 ```sh
-make image                 # builds stathe:v0.3.0 on distroless
-make image-save            # writes stathe-v0.3.0.tar.gz for an air-gapped host
+make image                 # builds stathe:$(git describe --tags) on distroless
+make image-save            # writes a tarball of it for an air-gapped host
 ```
 
 The runtime image holds the binary and a CA bundle. No shell, no package
@@ -132,7 +138,7 @@ docker run --rm \
   --mount type=bind,src=$HOME/.kube/config,dst=/kube/config,readonly \
   --user "$(id -u):$(id -g)" \
   -e KUBECONFIG=/kube/config \
-  stathe:v0.3.0 check
+  stathe:v0.3.1 check
 ```
 
 Two details worth copying rather than simplifying:
@@ -447,8 +453,13 @@ stathe check --manifests ./k8s --fail-on high
 `--fail-on` takes `high`, `medium`, `low` or `none`.
 
 > Pin the image by digest in a pipeline you care about. A tag can be moved; a
-> digest cannot, and stathe's own `SC-07` check would flag the tag. Find the
-> digest on the [package page](https://github.com/stathe-io/stathe/pkgs/container/stathe).
+> digest cannot, and stathe's own `SC-07` check would flag the tag — the
+> Dockerfile here pins its own base images the same way, and CI fails if either
+> drifts back to a tag.
+>
+> ```sh
+> docker buildx imagetools inspect ghcr.io/stathe-io/stathe:v0.3.1 | grep '^Digest:'
+> ```
 
 ### GitHub Actions
 
@@ -456,7 +467,7 @@ stathe check --manifests ./k8s --fail-on high
 - name: Assess the manifests
   run: |
     docker run --rm -v "$PWD:/work:ro" \
-      ghcr.io/stathe-io/stathe:v0.3.0 \
+      ghcr.io/stathe-io/stathe:v0.3.1 \
       check --manifests /work/k8s --fail-on high
 ```
 
@@ -464,7 +475,7 @@ stathe check --manifests ./k8s --fail-on high
 
 ```yaml
 stathe:
-  image: ghcr.io/stathe-io/stathe:v0.3.0
+  image: ghcr.io/stathe-io/stathe:v0.3.1
   script:
     - stathe check --manifests ./k8s --fail-on high
 ```

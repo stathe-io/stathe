@@ -1,5 +1,8 @@
 CLUSTER := northwind
-VERSION ?= v0.3.0
+# Derived, not typed: a hand-maintained version here was still claiming v0.3.0
+# two releases later, and it ends up in the image tag, the tarball name and the
+# binary's own `stathe version`.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 MANIFESTS := cluster/northwind
 
 .DEFAULT_GOAL := help
@@ -74,9 +77,22 @@ image-save: image ## Build and save the image as a portable tar file
 	@echo "Wrote stathe-$(VERSION).tar.gz ($$(du -h stathe-$(VERSION).tar.gz | cut -f1))"
 	@echo "On the other machine:  docker load < stathe-$(VERSION).tar.gz"
 
+# The toolchain govulncheck scans with; see the vuln target.
+VULN_TOOLCHAIN ?= go1.26.10
+
 .PHONY: vuln
-vuln: ## Check dependencies for known vulnerabilities
-	go run golang.org/x/vuln/cmd/govulncheck@v1.1.5 ./...
+vuln: ## Check dependencies and the standard library for known vulnerabilities
+	@# The toolchain is part of the answer, not background detail: govulncheck
+	@# judges the standard library of whatever Go builds the code, so the same
+	@# commit is clean on one machine and has 34 findings on another. A Go
+	@# 1.26.0 standard library has 34; 1.26.10 has none.
+	@#
+	@# So the toolchain is stated rather than inherited. Keep VULN_TOOLCHAIN in
+	@# step with go-version in the workflows: if this passes locally and CI
+	@# fails on the same commit, one of the two is scanning an older standard
+	@# library and that is the whole disagreement.
+	@echo "govulncheck, with $(VULN_TOOLCHAIN)"
+	GOTOOLCHAIN=$(VULN_TOOLCHAIN) go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
 .PHONY: fuzz
 fuzz: ## Fuzz the manifest parser for 60 seconds
