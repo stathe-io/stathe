@@ -28,6 +28,13 @@ type Meta struct {
 	Author      string
 	Email       string
 	KitVersion  string
+
+	// Provenance says which assessment this document was rendered from: the
+	// findings-file format, when it was produced and against what. A report an
+	// auditor will reuse next quarter has to be traceable to the run behind
+	// it, and a file that cannot say when it was produced has to admit that
+	// rather than let the report date stand in for it.
+	Provenance string
 }
 
 // Group collects the findings that share an ID, so the report shows one card
