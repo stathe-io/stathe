@@ -565,8 +565,13 @@ func runReport(args []string) int {
 	out := fs.String("out", "", "write the report here (default: stdout)")
 	client := fs.String("client", "", "client name for the cover")
 	env := fs.String("environment", "", "environment or cluster name")
-	author := fs.String("author", "Jarno Kristelijn", "report author")
-	email := fs.String("email", "info@testrebel.com", "contact address")
+	// No defaults for these two. They carried one person's name and address,
+	// which is right for that person and wrong for everybody else: a report is
+	// signed by whoever produced it, and a client reading someone else's
+	// contact details on their assessment has every reason to distrust the rest
+	// of it. Asked for, like --client, rather than guessed.
+	author := fs.String("author", "", "report author, as it should appear on the cover")
+	email := fs.String("email", "", "contact address for the author")
 	framework := fs.String("framework", "", "add a regulatory mapping section (nis2, dora, iso27001)")
 	fs.Parse(args)
 
@@ -601,8 +606,21 @@ func runReport(args []string) int {
 		return 1
 	}
 
-	if *client == "" {
-		fmt.Fprintln(os.Stderr, "stathe report needs --client")
+	var missing []string
+	for _, f := range []struct {
+		flag, value string
+	}{
+		{"--client", *client},
+		{"--author", *author},
+		{"--email", *email},
+	} {
+		if f.value == "" {
+			missing = append(missing, f.flag)
+		}
+	}
+	if len(missing) > 0 {
+		fmt.Fprintf(os.Stderr, "stathe report needs %s\n", strings.Join(missing, ", "))
+		fmt.Fprintln(os.Stderr, "The cover says who this assessment is for and who produced it.")
 		return 2
 	}
 

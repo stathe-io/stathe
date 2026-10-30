@@ -409,15 +409,22 @@ on sight that it carries no record of the run behind it.
 stathe check --context production --json > findings.json
 stathe report --findings findings.json \
   --client "Acme B.V." \
+  --author "Your Name" \
+  --email "you@example.com" \
   --environment "production" \
   --framework nis2 \
   --out report.html
 ```
 
+`--client`, `--author` and `--email` have no defaults and are all required: a
+report is signed by whoever produced it, and a client who finds someone else's
+contact details on their assessment has every reason to distrust the rest of it.
+
 Produces a document with a cover, a severity summary, one card per finding with
 its affected resources, and — with `--framework` — a section grouping findings
-by article. The cover records which version of stathe produced it, so two
-assessments months apart are comparable.
+by article. The cover records which version of stathe produced it and which
+assessment it was rendered from, so two assessments months apart are
+comparable.
 
 For a PDF:
 
