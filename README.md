@@ -40,7 +40,7 @@ Kubescape runs hundreds of checks. Trivy finds every CVE in your images. Both
 are good, free, and broader than this. stathe is for the part they leave to
 you: turning a scan into an assessment somebody else will accept as evidence.
 
-- **Permissions a client approves in advance.** Ten resource types, one verb,
+- **Permissions a client approves in advance.** Eleven resource types, one verb,
   in [one file](cluster/readonly-rbac.yaml) short enough for a security officer
   to read before the assessment starts. No `get`, no `watch`, no secrets, no
   `exec`.
@@ -178,7 +178,7 @@ them, are in [SECURITY.md](SECURITY.md).
 ### 1. Approve the access
 
 Hand [`cluster/readonly-rbac.yaml`](cluster/readonly-rbac.yaml) to whoever owns
-the cluster before anything runs. It is the whole permission set — ten resource
+the cluster before anything runs. It is the whole permission set — eleven resource
 types, one verb — and it is commented for the person who has to approve it. No
 `get`, no `watch`, no `log`, no `exec`, and no access to Secrets at all.
 

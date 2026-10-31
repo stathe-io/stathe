@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -174,17 +175,23 @@ func (r Resource) OwnedByAController() bool {
 	return false
 }
 
-// LoadDir reads every YAML manifest in a directory, including multi-document
-// files. Empty documents are skipped; anything else that fails to parse is an
-// error, because silently ignoring a malformed manifest would understate the
+// LoadDir reads every YAML manifest in a directory (.yaml and .yml), including
+// multi-document files and the List documents `kubectl get -o yaml` writes.
+// Empty documents are skipped; anything else that fails to parse is an error,
+// because silently ignoring a malformed manifest would understate the
 // findings.
 func LoadDir(dir string) ([]Resource, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
-	if err != nil {
-		return nil, err
+	var paths []string
+	for _, ext := range []string{"*.yaml", "*.yml"} {
+		found, err := filepath.Glob(filepath.Join(dir, ext))
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, found...)
 	}
+	sort.Strings(paths)
 	if len(paths) == 0 {
-		return nil, fmt.Errorf("no .yaml manifests found in %s", dir)
+		return nil, fmt.Errorf("no .yaml or .yml manifests found in %s", dir)
 	}
 
 	var out []Resource
@@ -193,24 +200,97 @@ func LoadDir(dir string) ([]Resource, error) {
 		if err != nil {
 			return nil, err
 		}
+		name := filepath.Base(p)
 		dec := yaml.NewDecoder(f)
 		for i := 0; ; i++ {
-			var r Resource
-			err := dec.Decode(&r)
+			var doc yaml.Node
+			err := dec.Decode(&doc)
 			if err == io.EOF {
 				break
 			}
+			if err == nil {
+				out, err = appendDocument(out, &doc, name)
+			}
 			if err != nil {
 				f.Close()
-				return nil, fmt.Errorf("%s document %d: %w", filepath.Base(p), i, err)
+				return nil, fmt.Errorf("%s document %d: %w", name, i, err)
 			}
-			if r.Kind == "" {
-				continue
-			}
-			r.Source = filepath.Base(p)
-			out = append(out, r)
 		}
 		f.Close()
 	}
 	return out, nil
+}
+
+// appendDocument adds one YAML document to rs: the resource itself, or the
+// items of a List. A List is unpacked one level only. kubectl never nests
+// them, so a nested one is not an export, and refusing it is better than
+// either unpacking without bound or dropping what is inside.
+func appendDocument(rs []Resource, doc *yaml.Node, source string) ([]Resource, error) {
+	kind, items := kindAndItems(doc)
+	if !isList(kind, items) {
+		var r Resource
+		if err := doc.Decode(&r); err != nil {
+			return rs, err
+		}
+		if r.Kind == "" {
+			return rs, nil
+		}
+		r.Source = source
+		return append(rs, r), nil
+	}
+
+	if items == nil || items.Kind != yaml.SequenceNode {
+		return rs, fmt.Errorf("%s has no list of items", kind)
+	}
+	for j, node := range items.Content {
+		if itemKind, itemItems := kindAndItems(node); isList(itemKind, itemItems) {
+			return rs, fmt.Errorf("%s item %d is itself a %s; stathe reads one level of List, as kubectl writes it", kind, j, itemKind)
+		}
+		var r Resource
+		if err := node.Decode(&r); err != nil {
+			return rs, fmt.Errorf("%s item %d: %w", kind, j, err)
+		}
+		if r.Kind == "" {
+			continue
+		}
+		r.Source = source
+		rs = append(rs, r)
+	}
+	return rs, nil
+}
+
+// kindAndItems reads the kind and the items node of a document without
+// decoding the rest. yaml.v3 will not decode into a yaml.Node field from a
+// node, so the mapping is walked by hand. Anything that is not a mapping has
+// neither.
+func kindAndItems(n *yaml.Node) (string, *yaml.Node) {
+	if n.Kind == yaml.DocumentNode && len(n.Content) == 1 {
+		n = n.Content[0]
+	}
+	if n.Kind != yaml.MappingNode {
+		return "", nil
+	}
+	var kind string
+	var items *yaml.Node
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		switch n.Content[i].Value {
+		case "kind":
+			if n.Content[i+1].Kind == yaml.ScalarNode {
+				kind = n.Content[i+1].Value
+			}
+		case "items":
+			items = n.Content[i+1]
+		}
+	}
+	return kind, items
+}
+
+// isList matches kubectl's List and the typed lists the API returns
+// (DeploymentList, ConfigMapList). A typed list needs its items to count as
+// one: a custom resource can be called IPAllowList and be nothing of the kind.
+func isList(kind string, items *yaml.Node) bool {
+	if kind == "List" {
+		return true
+	}
+	return strings.HasSuffix(kind, "List") && items != nil && items.Kind == yaml.SequenceNode
 }

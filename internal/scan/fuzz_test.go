@@ -20,6 +20,8 @@ func FuzzLoadDir(f *testing.F) {
 	f.Add([]byte("kind: Deployment\nmetadata: {name: a, namespace: b}\nspec:\n  template:\n    spec:\n      containers: [1, \"x\", {securityContext: 7, image: 3}]\n"))
 	f.Add([]byte("kind: ClusterRoleBinding\nroleRef: {name: cluster-admin}\nsubjects: [1, {kind: 2}, null]\n"))
 	f.Add([]byte("a: &a [*a]\n"))
+	f.Add([]byte("kind: List\nitems: [1, null, {kind: List, items: [{kind: ConfigMap}]}, {kind: Deployment, spec: 3}]\n"))
+	f.Add([]byte("kind: PodList\nitems: {kind: Pod}\n"))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		dir := t.TempDir()

@@ -44,6 +44,11 @@ var wanted = []struct {
 	{schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}, "NetworkPolicy", true, false},
 	{schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"}, "ClusterRoleBinding", false, false},
 
+	// ClusterRoles, so a binding is judged on what its role permits and not
+	// only on whether the role is called cluster-admin. Without this read the
+	// by-permission half of SC-06 had nothing to work on and stayed silent.
+	{schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"}, "ClusterRole", false, false},
+
 	// Read to notice a control that may already handle SC-07, never to suppress
 	// it: see ImagePolicyNotes. A cluster without this API is not an error --
 	// LoadCluster notes the missing type and carries on.
@@ -259,6 +264,22 @@ func fromUnstructured(obj map[string]interface{}, kind, name, ns string) Resourc
 		}
 	}
 
+	// A ClusterRole's rules, so SC-06 can judge a role by what it grants.
+	// NonResourceURLs is left out for the reason given on PolicyRule.
+	if rules, ok := obj["rules"].([]interface{}); ok {
+		for _, rule := range rules {
+			m, ok := rule.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			r.Rules = append(r.Rules, PolicyRule{
+				APIGroups: stringsOf(m["apiGroups"]),
+				Resources: stringsOf(m["resources"]),
+				Verbs:     stringsOf(m["verbs"]),
+			})
+		}
+	}
+
 	if subjects, ok := obj["subjects"].([]interface{}); ok {
 		for _, s := range subjects {
 			m, ok := s.(map[string]interface{})
@@ -276,4 +297,20 @@ func fromUnstructured(obj map[string]interface{}, kind, name, ns string) Resourc
 	}
 
 	return r
+}
+
+// stringsOf reads a list of strings out of an unstructured object, dropping
+// anything that is not a string rather than failing the whole resource.
+func stringsOf(v interface{}) []string {
+	xs, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, x := range xs {
+		if s, ok := x.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }

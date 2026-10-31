@@ -86,9 +86,10 @@ func CheckNetworkPolicies(rs []Resource) []Finding {
 // called.
 //
 // Only roles present in what was assessed are listed. A binding pointing at a
-// role stathe never saw is left alone: calling it safe would hide a real one,
+// role stathe never saw is not reported: calling it safe would hide a real one,
 // and calling it cluster-admin would invent a finding about a role the reader
-// cannot look up. Either way the honest answer is that it was not assessed.
+// cannot look up. The honest answer is that it was not assessed, and
+// UnseenRoles says so.
 func unlimitedClusterRoles(rs []Resource) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range rs {
@@ -470,5 +471,37 @@ func Run(rs []Resource) []Finding {
 		out = append(out, c(rs)...)
 	}
 	sortFindings(out)
+	return out
+}
+
+// UnseenRoles names the ClusterRoleBindings whose role was not among what was
+// assessed. CheckClusterAdmin cannot judge those, and a binding it cannot judge
+// has to show up under NOT ASSESSED, or a clean SC-06 can come from a run that
+// never saw the roles. On a live cluster this is a dangling binding; from a
+// manifest directory it is usually a role defined elsewhere, which the reader
+// can add to the directory.
+func UnseenRoles(rs []Resource) []Suppressed {
+	seen := map[string]bool{}
+	for _, r := range rs {
+		if r.Kind == "ClusterRole" {
+			seen[r.Metadata.Name] = true
+		}
+	}
+
+	var out []Suppressed
+	for _, r := range rs {
+		if r.Kind != "ClusterRoleBinding" {
+			continue
+		}
+		role := r.RoleRef["name"]
+		if role == "cluster-admin" || seen[role] {
+			continue
+		}
+		out = append(out, Suppressed{
+			What:   fmt.Sprintf("%s binds clusterrole %s", r.Ref(), role),
+			Reason: "the role was not in what was assessed, so SC-06 could not judge what it grants",
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].What < out[j].What })
 	return out
 }
