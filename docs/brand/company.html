@@ -8,13 +8,14 @@
     --accent: #19c7b2;
     --muted: #8ba3ad;
   }
+  @font-face { font-family: "IBM Plex Sans"; src: url(fonts/ibm-plex-sans.woff2) format("woff2"); font-weight: 100 700; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 1128px; height: 191px; }
   body {
     background:
       radial-gradient(130% 190% at 62% -40%, var(--glow) 0%, rgba(11,42,50,0) 62%),
       var(--ink);
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
     display: flex; align-items: center;
     /* LinkedIn drops the page logo over the lower left of a company cover,
        so nothing that matters starts before this. */
@@ -22,15 +23,11 @@
     overflow: hidden;
   }
   .wrap { display: flex; flex-direction: column; gap: 12px; }
-  .mark {
-    font-size: 62px; font-weight: 900; letter-spacing: -2.5px;
-    color: var(--word); line-height: 1; display: flex; align-items: flex-end; gap: 7px;
-  }
-  .dot { width: 15px; height: 15px; background: var(--accent); margin-bottom: 5px; }
+  .mark { display: block; height: 58px; width: auto; align-self: flex-start; }
   .line { font-size: 17px; font-weight: 500; color: var(--muted); letter-spacing: 0.1px; }
   .line b { color: var(--word); font-weight: 600; }
 </style>
 <div class="wrap">
-  <div class="mark">stathe<span class="dot"></span></div>
+  <img class="mark" src="wordmark.svg" alt="stathe">
   <div class="line">Read-only Kubernetes assessment. <b>Nothing installed, nothing hidden.</b></div>
 </div>
