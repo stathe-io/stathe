@@ -392,10 +392,10 @@ written.
 | ID | Check | What it catches | Severity |
 |---|---|---|---|
 | `SC-01` | Network separation | Namespaces with no NetworkPolicy, where any pod reaches any other pod | high |
-| `SC-04` | Plaintext credentials | ConfigMap keys that *end* in a credential word (`DB_PASSWORD`, `client-secret`, `STRIPE_API_KEY`), never ones that merely contain it (`SECRET_SCANNER_ENABLED` is a feature flag) | high |
-| `SC-05` | Workload privilege | Privileged containers, missing `securityContext`, and host mounts ranked by what they are worth: a container runtime socket or the kubelet's credentials are control of the node, `/proc` is not | high / medium |
+| `SC-04` | Plaintext credentials | ConfigMap keys and literal container `env` values whose name *ends* in a credential word (`DB_PASSWORD`, `client-secret`, `STRIPE_API_KEY`), never ones that merely contain it (`SECRET_SCANNER_ENABLED` is a feature flag), and never a variable taken from a Secret | high |
+| `SC-05` | Workload privilege | Privileged or root containers and init containers, missing `securityContext`, and host mounts ranked by what they are worth: a container runtime socket or the kubelet's credentials are control of the node, `/proc` is not | high / medium |
 | `SC-06` | Cluster-admin bindings | Any subject granted full control — service accounts, users, and aggregate groups such as `system:authenticated` — whether through `cluster-admin` itself or a ClusterRole that wildcards every verb, resource and API group under another name. The control plane's own identities are excluded and listed under `NOT ASSESSED` | high |
-| `SC-07` | Image provenance | Floating tags like `:latest` (high), and tags that are not digests (medium) | high / medium |
+| `SC-07` | Image provenance | Floating tags like `:latest` (high), and tags that are not digests (medium), in containers and init containers | high / medium |
 | `SC-09` | Resource limits | Containers with no memory limit, where one workload starves a node | low |
 
 Severity is the severity for a production platform, not a generic score. Every

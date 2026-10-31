@@ -337,6 +337,7 @@ func TestNorthwindFindings(t *testing.T) {
 	required := map[string]string{
 		"SC-01 no network separation":      "no NetworkPolicy",
 		"SC-04 credentials in a ConfigMap": "credentials in plain text",
+		"SC-04 a password in an env value": "as a literal value",
 		"SC-05 a privileged container":     "runs privileged",
 		"SC-05 the node filesystem mount":  "mounts the entire node filesystem",
 		"SC-06 cluster-admin granted":      "grants cluster-admin",

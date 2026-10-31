@@ -109,12 +109,23 @@ var controllerKinds = map[string]bool{
 // Containers returns the pod containers for workload kinds, and nil otherwise,
 // so callers can range over the result without checking the kind first.
 func (r Resource) Containers() []map[string]interface{} {
+	return r.containersAt("containers")
+}
+
+// InitContainers returns the init containers. They run before the workload
+// and with the same access to the node, which is why CNI and storage agents do
+// their privileged setup there.
+func (r Resource) InitContainers() []map[string]interface{} {
+	return r.containersAt("initContainers")
+}
+
+func (r Resource) containersAt(key string) []map[string]interface{} {
 	podSpec := r.PodSpec()
 	if podSpec == nil {
 		return nil
 	}
 
-	raw, ok := podSpec["containers"].([]interface{})
+	raw, ok := podSpec[key].([]interface{})
 	if !ok {
 		return nil
 	}
