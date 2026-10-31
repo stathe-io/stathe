@@ -283,9 +283,13 @@ func serviceAccountNamespace(name string) (string, bool) {
 // CheckPlainCredentials reports ConfigMaps holding something that looks like a
 // credential. ConfigMaps are not secrets, are rarely access-controlled, and are
 // routinely committed to Git.
+//
+// A literal env value in a pod spec is the same mistake one level up: anyone
+// who can read the workload, or its repository, can read the password.
 func CheckPlainCredentials(rs []Resource) []Finding {
 	var out []Finding
 	for _, r := range rs {
+		out = append(out, envCredentials(r)...)
 		if r.Kind != "ConfigMap" {
 			continue
 		}
@@ -299,6 +303,37 @@ func CheckPlainCredentials(rs []Resource) []Finding {
 			sort.Strings(hits)
 			out = append(out, finding("SC-04", r.Ref(),
 				"holds credentials in plain text: "+strings.Join(hits, ", "), High))
+		}
+	}
+	return out
+}
+
+// envCredentials reports, per container, the variables whose name is a
+// credential and whose value is written into the spec. A variable that takes
+// its value from a Secret (valueFrom) is the fix and is not reported, and an
+// empty value holds nothing. The value itself is never put in the finding.
+func envCredentials(r Resource) []Finding {
+	var out []Finding
+	containers := append(r.InitContainers(), r.Containers()...)
+	for _, c := range containers {
+		env, _ := c["env"].([]interface{})
+		var hits []string
+		for _, e := range env {
+			m, ok := e.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			name, _ := m["name"].(string)
+			value, _ := m["value"].(string)
+			if value != "" && looksLikeACredentialKey(name) {
+				hits = append(hits, name)
+			}
+		}
+		if len(hits) > 0 {
+			sort.Strings(hits)
+			cname, _ := c["name"].(string)
+			out = append(out, finding("SC-04", r.Ref(),
+				fmt.Sprintf("container %q sets %s as a literal value in the pod spec", cname, strings.Join(hits, ", ")), High))
 		}
 	}
 	return out
@@ -361,7 +396,7 @@ func looksLikeACredentialKey(key string) bool {
 func CheckMutableTags(rs []Resource) []Finding {
 	var out []Finding
 	for _, r := range rs {
-		for _, c := range r.Containers() {
+		for _, c := range append(r.InitContainers(), r.Containers()...) {
 			image, _ := c["image"].(string)
 			if image == "" || strings.Contains(image, "@sha256:") {
 				continue
@@ -395,12 +430,29 @@ func CheckPrivileged(rs []Resource) []Finding {
 				out = append(out, finding("SC-05", r.Ref(),
 					"runs privileged, which disables nearly all container isolation", High))
 			}
-			if uid, ok := sc["runAsUser"].(int); ok && uid == 0 {
+			if isZero(sc["runAsUser"]) {
 				out = append(out, finding("SC-05", r.Ref(), "runs as root (uid 0)", Medium))
 			}
 			if sc == nil {
 				out = append(out, finding("SC-05", r.Ref(),
 					"has no securityContext, so it runs with the image default, usually root", Medium))
+			}
+		}
+
+		// Init containers are named in the detail, so the existing findings on
+		// the workload's own containers keep the wording diff matches them on.
+		// A missing securityContext is not reported here: nearly every init
+		// container lacks one, and that noise would bury the privileged one.
+		for _, c := range r.InitContainers() {
+			sc, _ := c["securityContext"].(map[string]interface{})
+			name, _ := c["name"].(string)
+			if priv, ok := sc["privileged"].(bool); ok && priv {
+				out = append(out, finding("SC-05", r.Ref(),
+					fmt.Sprintf("init container %q runs privileged, which disables nearly all container isolation", name), High))
+			}
+			if isZero(sc["runAsUser"]) {
+				out = append(out, finding("SC-05", r.Ref(),
+					fmt.Sprintf("init container %q runs as root (uid 0)", name), Medium))
 			}
 		}
 
@@ -417,6 +469,21 @@ func CheckPrivileged(rs []Resource) []Finding {
 		}
 	}
 	return out
+}
+
+// isZero reports whether a number from a spec is 0. YAML decodes it as int,
+// the dynamic client as int64, and a JSON decode as float64; asserting one of
+// them made the root check silent on a live cluster.
+func isZero(v interface{}) bool {
+	switch n := v.(type) {
+	case int:
+		return n == 0
+	case int64:
+		return n == 0
+	case float64:
+		return n == 0
+	}
+	return false
 }
 
 func volumes(r Resource) []map[string]interface{} {
