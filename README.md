@@ -1,6 +1,6 @@
-<p align="center">
+<!-- <p align="center">
   <img src="docs/banner.png" alt="stathe" width="760">
-</p>
+</p> -->
 
 <p align="center">
   An audit-ready Kubernetes assessment you can hand to a regulator.
