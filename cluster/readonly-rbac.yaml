@@ -1,7 +1,7 @@
 # The least access stathe can do its work with.
 #
 # Hand this to whoever owns the cluster before the assessment starts. It is the
-# whole permission set: ten resource types, one verb. There is no `get` here
+# whole permission set: eleven resource types, one verb. There is no `get` here
 # and no `watch`, because the code does not call them -- it lists each type
 # once and works on what comes back.
 #
@@ -83,9 +83,10 @@ rules:
     resources: ["networkpolicies"]
     verbs: ["list"]
 
-  # ClusterRoleBindings: to find workloads bound to cluster-admin.
+  # ClusterRoleBindings and ClusterRoles: to find workloads bound to
+  # cluster-admin, or to a role that grants the same under another name.
   - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["clusterrolebindings"]
+    resources: ["clusterrolebindings", "clusterroles"]
     verbs: ["list"]
 
   # ValidatingAdmissionPolicies: to notice that the cluster may already enforce

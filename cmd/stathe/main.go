@@ -158,6 +158,7 @@ func runCheck(args []string) int {
 	// What the assessment left out, collected before anything is printed so the
 	// JSON path and the table path report the same exclusions.
 	left := append(inv.Skipped(), scan.PlatformSubjects(resources)...)
+	left = append(left, scan.UnseenRoles(resources)...)
 
 	// Accepted risk is applied before anything is printed or counted, so the
 	// JSON a pipeline consumes and the table a human reads agree.
