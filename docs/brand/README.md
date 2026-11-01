@@ -11,8 +11,8 @@ source here means the next size is a window-size argument rather than a redraw.
 | `stathe-linkedin-company-2256x382.png` | The same at 2x, sharper on high-density screens; upload this one |
 | `stathe-logo-600.png` | Company page logo, from `logo.html` |
 
-The left is left clear: LinkedIn drops the page logo over the lower left of a
-company cover.
+The name is right of centre: LinkedIn drops the page logo over the left of the
+cover, and the company card in search and the feed shows only its middle.
 
 ## Palette
 

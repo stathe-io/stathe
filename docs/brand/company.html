@@ -16,15 +16,17 @@
       radial-gradient(130% 190% at 62% -40%, var(--glow) 0%, rgba(11,42,50,0) 62%),
       var(--ink);
     font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
-    display: flex; align-items: center;
-    /* LinkedIn drops the page logo over the lower left of a company cover,
-       so nothing that matters starts before this. */
-    padding-left: 300px;
+    display: flex; align-items: center; justify-content: flex-end;
+    /* LinkedIn puts the page logo over the left of the cover, and the company
+       card in search and the feed shows only the middle of it (about x 220 to
+       910), with the logo covering up to about x 580. Right-aligned and ending
+       at x 880, the name stays clear in both. */
+    padding-right: 248px;
     overflow: hidden;
   }
-  .wrap { display: flex; flex-direction: column; gap: 12px; }
-  .mark { display: block; height: 58px; width: auto; align-self: flex-start; }
-  .line { font-size: 19px; font-weight: 500; color: var(--muted); letter-spacing: 0.1px; }
+  .wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+  .mark { display: block; height: 58px; width: auto; align-self: flex-end; }
+  .line { font-size: 17px; font-weight: 500; color: var(--muted); letter-spacing: 0.1px; }
   .line b { color: var(--word); font-weight: 600; }
 </style>
 <div class="wrap">
