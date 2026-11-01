@@ -29,8 +29,12 @@ Sampled from `docs/banner.png` rather than guessed.
 
 The wordmark is **Archivo Black**, the face `docs/banner.png` was drawn in,
 outlined to paths so nothing depends on the font being installed. Running text
-is **IBM Plex Sans**, as in the banner's tagline; `fonts/` holds the woff2 the
-HTML uses. Both are OFL.
+is **IBM Plex Sans**, as in the banner's tagline.
+
+`fonts/` holds both, unmodified, with their licences (SIL OFL 1.1): the Archivo
+Black TTF from `google/fonts`, and IBM's own Latin-1 cut of Plex Sans Variable
+from `@ibm/plex-sans-variable` 0.2.0. Plex has a reserved font name, so use
+IBM's files rather than a subset made elsewhere.
 
 `wordmark.py` regenerates the SVGs from the Archivo Black TTF; how to run it is
 at the top of the file.

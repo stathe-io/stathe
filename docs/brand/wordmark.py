@@ -1,11 +1,10 @@
 """Outline the wordmark in Archivo Black as SVG paths, with the teal square.
 
     pip install fonttools uharfbuzz brotli
-    python docs/brand/wordmark.py ArchivoBlack-Regular.ttf docs/brand/wordmark.svg
-    python docs/brand/wordmark.py ArchivoBlack-Regular.ttf docs/brand/mark.svg s
+    python docs/brand/wordmark.py docs/brand/fonts/ArchivoBlack-Regular.ttf docs/brand/wordmark.svg
+    python docs/brand/wordmark.py docs/brand/fonts/ArchivoBlack-Regular.ttf docs/brand/mark.svg s
 
-Archivo Black is OFL: https://fonts.google.com/specimen/Archivo+Black. Use the
-TTF; harfbuzz does not read woff2.
+Use the TTF; harfbuzz does not read woff2.
 
 The spacing and the square are matched to docs/banner.png: tracking -55 font
 units, the square 0.38 of the x-height, 0.077 from the "e", lifted 0.03 off the
