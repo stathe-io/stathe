@@ -8,6 +8,7 @@ source here means the next size is a window-size argument rather than a redraw.
 | `wordmark.svg` | "stathe" and the square, as paths. Use this anywhere the name appears as a logo |
 | `mark.svg` | The "s" and the square, for small sizes where the full name does not survive |
 | `stathe-linkedin-company-1128x191.png` | Company page cover, from `company.html` |
+| `stathe-linkedin-company-2256x382.png` | The same at 2x, sharper on high-density screens; upload this one |
 | `stathe-logo-600.png` | Company page logo, from `logo.html` |
 
 The left is left clear: LinkedIn drops the page logo over the lower left of a
