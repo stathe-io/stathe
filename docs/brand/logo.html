@@ -20,7 +20,6 @@
     background:
       radial-gradient(120% 150% at 50% -25%, var(--glow) 0%, rgba(11,42,50,0) 65%),
       var(--ink);
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -28,31 +27,9 @@
   }
 
   /* The mark sits well inside the canvas: LinkedIn rounds the corners and in
-     some places masks it to a circle, so nothing important goes near an edge. */
-  .mark {
-    display: flex;
-    align-items: flex-end;
-    gap: 22px;
-    color: var(--word);
-    font-size: 390px;
-    font-weight: 900;
-    letter-spacing: -14px;
-    line-height: 0.78;
-    /* The "s" has no descender, so the glyph box centres lower than the glyph
-       does. Nudge the whole group up to centre it optically rather than
-       geometrically. */
-    transform: translateY(-38px);
-  }
-
-  .dot {
-    width: 74px;
-    height: 74px;
-    background: var(--accent);
-    /* Lifted just off the bottom of the "s" -- flush read as a full stop,
-       26px (company.html's value, set for a 62px wordmark) read as detached.
-       Measured against the glyph, not guessed: see the comment on .mark. */
-    margin-bottom: 13px;
-    flex: none;
-  }
+     some places masks it to a circle, so nothing important goes near an edge.
+     mark.svg is the "s" and the square, outlined from Archivo Black by
+     wordmark.py. */
+  .mark { width: 330px; height: auto; }
 </style>
-<div class="mark">s<span class="dot"></span></div>
+<img class="mark" src="mark.svg" alt="stathe">

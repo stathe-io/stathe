@@ -8,29 +8,28 @@
     --accent: #19c7b2;
     --muted: #8ba3ad;
   }
+  @font-face { font-family: "IBM Plex Sans"; src: url(fonts/IBMPlexSansVar-Roman-Latin1.woff2) format("woff2"); font-weight: 100 700; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 1128px; height: 191px; }
   body {
     background:
       radial-gradient(130% 190% at 62% -40%, var(--glow) 0%, rgba(11,42,50,0) 62%),
       var(--ink);
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    display: flex; align-items: center;
-    /* LinkedIn drops the page logo over the lower left of a company cover,
-       so nothing that matters starts before this. */
-    padding-left: 300px;
+    font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    display: flex; align-items: center; justify-content: flex-end;
+    /* LinkedIn puts the page logo over the left of the cover, and the company
+       card in search and the feed shows only the middle of it (about x 220 to
+       910), with the logo covering up to about x 580. Right-aligned and ending
+       at x 880, the name stays clear in both. */
+    padding-right: 248px;
     overflow: hidden;
   }
-  .wrap { display: flex; flex-direction: column; gap: 12px; }
-  .mark {
-    font-size: 62px; font-weight: 900; letter-spacing: -2.5px;
-    color: var(--word); line-height: 1; display: flex; align-items: flex-end; gap: 7px;
-  }
-  .dot { width: 15px; height: 15px; background: var(--accent); margin-bottom: 5px; }
+  .wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+  .mark { display: block; height: 58px; width: auto; align-self: flex-end; }
   .line { font-size: 17px; font-weight: 500; color: var(--muted); letter-spacing: 0.1px; }
   .line b { color: var(--word); font-weight: 600; }
 </style>
 <div class="wrap">
-  <div class="mark">stathe<span class="dot"></span></div>
-  <div class="line">Read-only Kubernetes assessment. <b>Nothing installed, nothing hidden.</b></div>
+  <img class="mark" src="wordmark.svg" alt="stathe">
+  <div class="line"><b>DevSecOps for secure environments</b></div>
 </div>
